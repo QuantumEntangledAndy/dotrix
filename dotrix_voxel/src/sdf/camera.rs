@@ -32,12 +32,12 @@ impl Default for CameraBuffer {
 }
 
 /// startup system
-pub(super) fn startup(mut globals: Mut<Globals>) {
+pub fn startup(mut globals: Mut<Globals>) {
     globals.set(CameraBuffer::default());
 }
 
 /// startup system
-pub(super) fn load(
+pub fn load(
     renderer: Const<Renderer>,
     camera: Const<Camera>,
     window: Const<Window>,

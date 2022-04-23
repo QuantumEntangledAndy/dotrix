@@ -722,6 +722,7 @@ dependencies = [
  "dotrix_pbr",
  "dotrix_primitives",
  "futures",
+ "lazy_static",
  "num",
  "rand 0.8.4",
  "rayon",

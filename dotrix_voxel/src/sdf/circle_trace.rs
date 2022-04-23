@@ -11,12 +11,7 @@ use dotrix_math::*;
 use dotrix_primitives::Cube;
 use tera::{Context, Tera};
 
-mod camera;
-mod lights;
-
-use camera::CameraBuffer;
-pub use lights::Light;
-use lights::LightStorageBuffer;
+use super::camera::CameraBuffer;
 
 const PIPELINE_LABEL: &str = "dotrix_voxel::sdf::circle_trace";
 

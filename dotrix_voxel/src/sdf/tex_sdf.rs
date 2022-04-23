@@ -1,3 +1,5 @@
+use lazy_static::lazy_static;
+
 use dotrix_core::renderer::{Buffer, Pipeline, Renderer, Texture as TextureBuffer};
 
 /// Object to hold the 3D texture containing an Sdf
@@ -6,7 +8,7 @@ pub struct TexSdf {
     /// with r channel of the distance anf g channel of the material ID
     pub buffer: TextureBuffer,
     /// Pipeline for renderering this SDF
-    pub pipeline: Pipeline,
+    pub depth_pipeline: Pipeline,
     /// Uniform that holds render related data
     pub data: Buffer,
 }
@@ -21,7 +23,7 @@ impl Default for TexSdf {
                 buffer.format = wgpu::TextureFormat::Rg32Float;
                 buffer
             },
-            pipeline: Default::default(),
+            depth_pipeline: Default::default(),
             data: Buffer::uniform("TexSdf Data"),
         }
     }
