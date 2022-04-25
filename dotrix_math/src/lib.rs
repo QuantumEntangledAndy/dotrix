@@ -19,6 +19,8 @@ pub use cgmath::SquareMatrix;
 pub use cgmath::VectorSpace;
 pub use math::slerp;
 
+/// 3x3 Matrix of f32
+pub type Mat3 = cgmath::Matrix3<f32>;
 /// 4x4 Matrix of f32
 pub type Mat4 = cgmath::Matrix4<f32>;
 /// 2 dimentional point of f32

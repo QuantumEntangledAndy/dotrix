@@ -317,7 +317,7 @@ pub(super) fn compute(world: Const<World>, assets: Const<Assets>, mut renderer: 
 
             // SDF conversion
             if jump_flood.sdf_pipeline.is_none() {
-                sdf.load(&renderer, &dimensions);
+                sdf.clear_texture(&renderer, &dimensions);
 
                 let mut jump_flood_sdf: Compute = Default::default();
 

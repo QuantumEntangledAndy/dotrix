@@ -12,6 +12,15 @@
 // Which attempts to overstep on the ray in order to reduce the number of steps marched
 // on the ray
 //
+struct RaymarchIn {
+  init_t: f32;
+  max_t: f32;
+  origin: vec3<f32>;
+  direction: vec3<f32>;
+  dx_direction: vec3<f32>;
+  dy_direction: vec3<f32>;
+  max_iterations: u32;
+};
 struct RaymarchOut {
   t: f32;
   success: bool;
@@ -28,17 +37,17 @@ fn pixel_radius(t: f32, direction: vec3<f32>, direction_x: vec3<f32>, direction_
   return length(vec2<f32>(dx, dy)) * 0.1; // 10% of pixel size is the cut-off
 }
 
-fn raymarch(t_in: f32, ro: vec3<f32>, rd: vec3<f32>, rdx: vec3<f32>, rdy: vec3<f32>) -> RaymarchOut {
-  let o: vec3<f32> = ro;
-  let d: vec3<f32> = rd;
-  let dx: vec3<f32> = rdx;
-  let dy: vec3<f32> = rdy;
+fn raymarch(in: RaymarchIn) -> RaymarchOut {
+  let o: vec3<f32> = in.origin;
+  let d: vec3<f32> = in.direction;
+  let dx: vec3<f32> = in.dx_direction;
+  let dy: vec3<f32> = in.dy_direction;
 
   let STEP_SIZE_REDUCTION: f32 = 0.95;
-  let MAX_DISTANCE: f32 = t_in + length(u_sdf.grid_dimensions.xyz * abs(u_sdf.world_scale.xyz));
-  let MAX_ITERATIONS: u32 = 128u;
+  let MAX_DISTANCE: f32 = in.max_t;
+  let MAX_ITERATIONS: u32 = in.max_iterations;
 
-  var t: f32 = t_in;
+  var t: f32 = in.init_t;
   var rp: f32 = 0.; // prev
   var rc: f32 = map(o + (t)*d);; // current
   var rn: f32 = t + MAX_DISTANCE * 2.0; // next (set to effectivly infinity)

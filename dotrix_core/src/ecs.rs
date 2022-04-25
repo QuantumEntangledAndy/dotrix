@@ -16,6 +16,18 @@ impl From<u64> for Entity {
     }
 }
 
+impl From<Entity> for u64 {
+    fn from(entity: Entity) -> Self {
+        entity.0
+    }
+}
+
+impl From<&Entity> for u64 {
+    fn from(entity: &Entity) -> Self {
+        entity.0
+    }
+}
+
 /// Any data structure can be a component
 pub trait Component: Send + Sync + 'static {}
 impl<T: Send + Sync + 'static> Component for T {}

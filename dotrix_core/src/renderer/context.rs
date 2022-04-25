@@ -296,6 +296,41 @@ impl Context {
             },
         );
     }
+
+    pub(crate) fn run_copy_texture_to_texture(
+        &mut self,
+        texture_src: &super::Texture,
+        buffer_dst: &super::Texture,
+        extent: [u32; 3],
+    ) {
+        let encoder = self.encoder.as_mut().expect("WGPU encoder must be set");
+
+        encoder.copy_texture_to_texture(
+            wgpu::ImageCopyTexture {
+                texture: texture_src
+                    .wgpu_texture
+                    .as_ref()
+                    .expect("Texture must be loaded"),
+                mip_level: 0,
+                origin: wgpu::Origin3d { x: 0, y: 0, z: 0 },
+                aspect: wgpu::TextureAspect::All,
+            },
+            wgpu::ImageCopyTexture {
+                texture: buffer_dst
+                    .wgpu_texture
+                    .as_ref()
+                    .expect("Texture must be loaded"),
+                mip_level: 0,
+                origin: wgpu::Origin3d { x: 0, y: 0, z: 0 },
+                aspect: wgpu::TextureAspect::All,
+            },
+            wgpu::Extent3d {
+                width: extent[0],
+                height: extent[1],
+                depth_or_array_layers: extent[2],
+            },
+        );
+    }
 }
 
 pub(crate) async fn init(window: &winit::window::Window, sample_count: u32) -> Context {

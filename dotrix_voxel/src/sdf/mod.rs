@@ -4,9 +4,14 @@ use dotrix_core::Application;
 mod camera;
 mod depth;
 mod jump_flood;
+mod map_data;
+mod obb;
+mod render;
 mod tex_sdf;
 
+use depth::*;
 pub use jump_flood::*;
+pub use obb::*;
 pub use tex_sdf::*;
 
 /// Enables Voxel SDF Dotrix Extension
@@ -16,4 +21,5 @@ pub fn extension(app: &mut Application) {
 
     camera::extension(app);
     depth::extension(app);
+    render::extension(app);
 }

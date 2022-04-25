@@ -4,10 +4,10 @@ use dotrix::{
     assets::Texture,
     camera,
     ecs::{Const, Mut},
-    egui, overlay, Assets, Camera, Dotrix, System, Transform, World,
+    egui, overlay, Assets, Camera, Dotrix, Frame, System, Transform, World,
 };
-use dotrix_pbr::Material;
-use dotrix_voxel::{Grid, Light, MaterialSet, TexSdf, VoxelJumpFlood};
+use dotrix_pbr::{Light, Material};
+use dotrix_voxel::{Grid, MaterialSet, TexSdf, VoxelJumpFlood};
 use rand::Rng;
 
 fn main() {
@@ -144,7 +144,7 @@ fn startup(mut camera: Mut<Camera>, mut world: Mut<World>, mut assets: Mut<Asset
     },)));
 }
 
-pub fn ui(overlay: Mut<Overlay>, world: Const<World>) {
+pub fn ui(overlay: Mut<Overlay>, world: Const<World>, frame: Const<Frame>) {
     let egui = overlay
         .get::<Egui>()
         .expect("Renderer does not contain an Overlay instance");
@@ -169,6 +169,7 @@ pub fn ui(overlay: Mut<Overlay>, world: Const<World>) {
                     .prefix("Z:"),
             );
         }
+        ui.label(&format!("fps: {}", frame.fps()));
     });
 }
 

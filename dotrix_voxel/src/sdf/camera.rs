@@ -6,7 +6,7 @@ use dotrix_core::{
 use dotrix_math::SquareMatrix;
 
 #[repr(C)]
-#[derive(Default, Copy, Clone)]
+#[derive(Default, Debug, Copy, Clone)]
 pub(super) struct Uniform {
     proj_view: [[f32; 4]; 4],
     static_camera_trans: [[f32; 4]; 4],

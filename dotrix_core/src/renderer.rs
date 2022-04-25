@@ -207,6 +207,17 @@ impl Renderer {
             .run_copy_texture_to_buffer(texture, buffer, extent, bytes_per_pixel);
     }
 
+    /// Copy a texture to a texture
+    pub fn copy_texture_to_texture(
+        &mut self,
+        texture_source: &Texture,
+        texture_dest: &Texture,
+        extent: [u32; 3],
+    ) {
+        self.context_mut()
+            .run_copy_texture_to_texture(texture_source, texture_dest, extent);
+    }
+
     /// Fetch texture from GPU
     pub fn fetch_texture(
         &mut self,

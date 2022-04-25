@@ -3,6 +3,27 @@
 ///
 /// This varient works on SDFs stored in 3D textures
 
+// Data for the map calculation
+struct MapData {
+  // This transform scales the 1x1x1 cube so that it totally encloses the
+  // voxels
+  cube_transform: mat4x4<f32>;
+  // Inverse cube_transform
+  inv_cube_transform: mat4x4<f32>;
+  // World transform of the voxel grid
+  world_transform: mat4x4<f32>;
+  // Inverse World transform of the voxel grid
+  inv_world_transform: mat4x4<f32>;
+  // Dimensions of the voxel
+  grid_dimensions: vec4<f32>;
+  // Scale in world space
+  world_scale: vec4<f32>;
+};
+[[group({{ map_data_group }}), binding({{ map_data_binding }})]]
+var<uniform> u_mapdata: MapData;
+
+[[group({{ sdf_tex_group }}), binding({{ sdf_tex_binding }})]]
+var sdf_texture: texture_3d<f32>;
 
 // SDF for a box, b is half box size
 fn sdBox(p: vec3<f32>,b: vec3<f32>) -> f32
@@ -104,19 +125,19 @@ fn tri_linear_interpolation(cube_p: vec4<f32>) -> f32 {
 // Get distance to surface from a point in world space
 fn map(p: vec3<f32>) -> f32
 {
-    let local_p: vec4<f32> = (u_sdf.inv_world_transform * vec4<f32>(p, 1.));
-    let cube_p: vec4<f32> = (u_sdf.inv_cube_transform * local_p);
+    let local_p: vec4<f32> = (u_mapdata.inv_world_transform * vec4<f32>(p, 1.));
+    let cube_p: vec4<f32> = (u_mapdata.inv_cube_transform * local_p);
 
     let internal_dist = tri_linear_interpolation(cube_p);
 
     // Enclosing box used for clipping
-    let enclosing_box: f32 = sdBox(local_p.xyz, (u_sdf.grid_dimensions.xyz * 1.00)/vec3<f32>(2.));
+    let enclosing_box: f32 = sdBox(local_p.xyz, (u_mapdata.grid_dimensions.xyz * 1.00)/vec3<f32>(2.));
 
     //
     // Distance are built on the assumption that voxel size is one
     // we must correct that
     // If scale is non_uniform we can only provide a bound on the distance
-    let scale: vec3<f32> = u_sdf.world_scale.xyz;
+    let scale: vec3<f32> = u_mapdata.world_scale.xyz;
     let min_scale: f32 = min(abs(scale.x), min(abs(scale.y), abs(scale.z)));
 
     // Return intersection of voxel sdf and enclosing (clipping) box
@@ -128,8 +149,8 @@ fn map(p: vec3<f32>) -> f32
 // Using nearest neighbour
 fn map_material(p: vec3<f32>) -> u32
 {
-  let local_p: vec4<f32> = (u_sdf.inv_world_transform * vec4<f32>(p, 1.));
-  let cube_p: vec4<f32> = (u_sdf.inv_cube_transform * local_p);
+  let local_p: vec4<f32> = (u_mapdata.inv_world_transform * vec4<f32>(p, 1.));
+  let cube_p: vec4<f32> = (u_mapdata.inv_cube_transform * local_p);
 
   let seed_dim: vec3<i32> = textureDimensions(sdf_texture) - vec3<i32>(1);
   let seed_dim_f32: vec3<f32> = vec3<f32>(f32(seed_dim.x), f32(seed_dim.y), f32(seed_dim.z));
@@ -144,7 +165,7 @@ fn map_material(p: vec3<f32>) -> u32
 // Surface gradient (is the normal)
 fn map_normal (p: vec3<f32>) -> vec3<f32>
 {
-  let eps: vec3<f32> = abs(u_sdf.world_scale.xyz) * 0.05;
+  let eps: vec3<f32> = abs(u_mapdata.world_scale.xyz) * 0.05;
 
   return normalize
   ( vec3<f32>
