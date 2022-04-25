@@ -23,6 +23,11 @@ pub struct SdfDepth {
     /// The pipeline used to init the ping/pong and normal buffers
     /// with default values on the gpu
     pub max_iteration: u32,
+    /// Scale factor for the depth trace
+    ///
+    /// This controls the number of rays that will be cast
+    /// A number of 1. will mean the same scale as that in `[crate::SdfCalc::working_scale]`
+    pub working_scale: f32,
 }
 
 impl Default for SdfDepth {
@@ -59,6 +64,7 @@ impl Default for SdfDepth {
             },
 
             max_iteration: 128,
+            working_scale: 1.0,
         }
     }
 }
