@@ -21,23 +21,56 @@ fn main() {
         .run();
 }
 
-fn startup(mut camera: Mut<Camera>, mut world: Mut<World>, mut assets: Mut<Assets>) {
-    camera.target = [0., 0., 0.].into();
-    camera.distance = 30.0;
-    camera.tilt = 0.0;
-
-    let mut grid = Grid::default();
-    randomize_grid(&mut grid);
-
+fn load_texs(assets: &mut Assets) {
     assets.import("assets/textures/mossy_bricks/Bricks076C_1K_AmbientOcclusion.jpg");
     assets.import("assets/textures/mossy_bricks/Bricks076C_1K_Color.jpg");
     assets.import("assets/textures/mossy_bricks/Bricks076C_1K_NormalDX.jpg");
     assets.import("assets/textures/mossy_bricks/Bricks076C_1K_Roughness.jpg");
 
-    let ao = assets.register::<Texture>("Bricks076C_1K_AmbientOcclusion");
-    let albedo = assets.register::<Texture>("Bricks076C_1K_Color");
-    let normal = assets.register::<Texture>("Bricks076C_1K_NormalDX");
-    let roughness = assets.register::<Texture>("Bricks076C_1K_Roughness");
+    assets.register::<Texture>("Bricks076C_1K_AmbientOcclusion");
+    assets.register::<Texture>("Bricks076C_1K_Color");
+    assets.register::<Texture>("Bricks076C_1K_NormalDX");
+    assets.register::<Texture>("Bricks076C_1K_Roughness");
+
+    assets.import("assets/textures/PaintedPlaster010/PaintedPlaster010_1K_AmbientOcclusion.png");
+    assets.import("assets/textures/PaintedPlaster010/PaintedPlaster010_1K_Color.png");
+    assets.import("assets/textures/PaintedPlaster010/PaintedPlaster010_1K_NormalDX.png");
+    assets.import("assets/textures/PaintedPlaster010/PaintedPlaster010_1K_Roughness.png");
+
+    assets.register::<Texture>("PaintedPlaster010_1K_AmbientOcclusion");
+    assets.register::<Texture>("PaintedPlaster010_1K_Color");
+    assets.register::<Texture>("PaintedPlaster010_1K_NormalDX");
+    assets.register::<Texture>("PaintedPlaster010_1K_Roughness");
+
+    assets.import("assets/textures/Bricks075B/Bricks075B_1K_AmbientOcclusion.jpg");
+    assets.import("assets/textures/Bricks075B/Bricks075B_1K_Color.jpg");
+    assets.import("assets/textures/Bricks075B/Bricks075B_1K_NormalDX.jpg");
+    assets.import("assets/textures/Bricks075B/Bricks075B_1K_Roughness.jpg");
+
+    assets.register::<Texture>("Bricks075B_1K_AmbientOcclusion");
+    assets.register::<Texture>("Bricks075B_1K_Color");
+    assets.register::<Texture>("Bricks075B_1K_NormalDX");
+    assets.register::<Texture>("Bricks075B_1K_Roughness");
+
+    assets.import("assets/textures/PavingStones113/PavingStones113_1K_AmbientOcclusion.jpg");
+    assets.import("assets/textures/PavingStones113/PavingStones113_1K_Color.jpg");
+    assets.import("assets/textures/PavingStones113/PavingStones113_1K_NormalDX.jpg");
+    assets.import("assets/textures/PavingStones113/PavingStones113_1K_Roughness.jpg");
+
+    assets.register::<Texture>("PavingStones113_1K_AmbientOcclusion");
+    assets.register::<Texture>("PavingStones113_1K_Color");
+    assets.register::<Texture>("PavingStones113_1K_NormalDX");
+    assets.register::<Texture>("PavingStones113_1K_Roughness");
+}
+
+fn get_material_set(assets: &mut Assets) -> MaterialSet {
+    let ao = assets
+        .find::<Texture>("Bricks076C_1K_AmbientOcclusion")
+        .unwrap();
+    let albedo = assets.find::<Texture>("Bricks076C_1K_Color").unwrap();
+    let normal = assets.find::<Texture>("Bricks076C_1K_NormalDX").unwrap();
+    let roughness = assets.find::<Texture>("Bricks076C_1K_Roughness").unwrap();
+
     let mut material_set = MaterialSet::default();
     material_set.set_material(
         0,
@@ -52,15 +85,18 @@ fn startup(mut camera: Mut<Camera>, mut world: Mut<World>, mut assets: Mut<Asset
         },
     );
 
-    assets.import("assets/textures/PaintedPlaster010/PaintedPlaster010_1K_AmbientOcclusion.png");
-    assets.import("assets/textures/PaintedPlaster010/PaintedPlaster010_1K_Color.png");
-    assets.import("assets/textures/PaintedPlaster010/PaintedPlaster010_1K_NormalDX.png");
-    assets.import("assets/textures/PaintedPlaster010/PaintedPlaster010_1K_Roughness.png");
-
-    let ao = assets.register::<Texture>("PaintedPlaster010_1K_AmbientOcclusion");
-    let albedo = assets.register::<Texture>("PaintedPlaster010_1K_Color");
-    let normal = assets.register::<Texture>("PaintedPlaster010_1K_NormalDX");
-    let roughness = assets.register::<Texture>("PaintedPlaster010_1K_Roughness");
+    let ao = assets
+        .find::<Texture>("PaintedPlaster010_1K_AmbientOcclusion")
+        .unwrap();
+    let albedo = assets
+        .find::<Texture>("PaintedPlaster010_1K_Color")
+        .unwrap();
+    let normal = assets
+        .find::<Texture>("PaintedPlaster010_1K_NormalDX")
+        .unwrap();
+    let roughness = assets
+        .find::<Texture>("PaintedPlaster010_1K_Roughness")
+        .unwrap();
     material_set.set_material(
         1,
         Material {
@@ -74,15 +110,12 @@ fn startup(mut camera: Mut<Camera>, mut world: Mut<World>, mut assets: Mut<Asset
         },
     );
 
-    assets.import("assets/textures/Bricks075B/Bricks075B_1K_AmbientOcclusion.jpg");
-    assets.import("assets/textures/Bricks075B/Bricks075B_1K_Color.jpg");
-    assets.import("assets/textures/Bricks075B/Bricks075B_1K_NormalDX.jpg");
-    assets.import("assets/textures/Bricks075B/Bricks075B_1K_Roughness.jpg");
-
-    let ao = assets.register::<Texture>("Bricks075B_1K_AmbientOcclusion");
-    let albedo = assets.register::<Texture>("Bricks075B_1K_Color");
-    let normal = assets.register::<Texture>("Bricks075B_1K_NormalDX");
-    let roughness = assets.register::<Texture>("Bricks075B_1K_Roughness");
+    let ao = assets
+        .find::<Texture>("Bricks075B_1K_AmbientOcclusion")
+        .unwrap();
+    let albedo = assets.find::<Texture>("Bricks075B_1K_Color").unwrap();
+    let normal = assets.find::<Texture>("Bricks075B_1K_NormalDX").unwrap();
+    let roughness = assets.find::<Texture>("Bricks075B_1K_Roughness").unwrap();
     material_set.set_material(
         2,
         Material {
@@ -96,15 +129,16 @@ fn startup(mut camera: Mut<Camera>, mut world: Mut<World>, mut assets: Mut<Asset
         },
     );
 
-    assets.import("assets/textures/PavingStones113/PavingStones113_1K_AmbientOcclusion.jpg");
-    assets.import("assets/textures/PavingStones113/PavingStones113_1K_Color.jpg");
-    assets.import("assets/textures/PavingStones113/PavingStones113_1K_NormalDX.jpg");
-    assets.import("assets/textures/PavingStones113/PavingStones113_1K_Roughness.jpg");
-
-    let ao = assets.register::<Texture>("PavingStones113_1K_AmbientOcclusion");
-    let albedo = assets.register::<Texture>("PavingStones113_1K_Color");
-    let normal = assets.register::<Texture>("PavingStones113_1K_NormalDX");
-    let roughness = assets.register::<Texture>("PavingStones113_1K_Roughness");
+    let ao = assets
+        .find::<Texture>("PavingStones113_1K_AmbientOcclusion")
+        .unwrap();
+    let albedo = assets.find::<Texture>("PavingStones113_1K_Color").unwrap();
+    let normal = assets
+        .find::<Texture>("PavingStones113_1K_NormalDX")
+        .unwrap();
+    let roughness = assets
+        .find::<Texture>("PavingStones113_1K_Roughness")
+        .unwrap();
     material_set.set_material(
         3,
         Material {
@@ -118,9 +152,23 @@ fn startup(mut camera: Mut<Camera>, mut world: Mut<World>, mut assets: Mut<Asset
         },
     );
 
+    material_set
+}
+
+fn startup(mut camera: Mut<Camera>, mut world: Mut<World>, mut assets: Mut<Assets>) {
+    camera.target = [0., 0., 0.].into();
+    camera.distance = 30.0;
+    camera.tilt = 0.0;
+
+    load_texs(&mut assets);
+
     world.spawn(vec![(
-        grid,
-        material_set,
+        {
+            let mut grid = Grid::default();
+            randomize_grid(&mut grid);
+            grid
+        },
+        get_material_set(&mut assets),
         // Instruct it to use the JumpFlood algorithm to convert the Voxel to an SDF
         VoxelJumpFlood::default(),
         // Render as a 3D texture based SDF
@@ -129,6 +177,26 @@ fn startup(mut camera: Mut<Camera>, mut world: Mut<World>, mut assets: Mut<Asset
         Transform::builder()
             // .with_translate([2.,2.,2.].into())
             .with_scale([1., 3., 1.].into())
+            .build(),
+    )]);
+
+    let mut grid = Grid::default();
+    randomize_grid(&mut grid);
+    world.spawn(vec![(
+        {
+            let mut grid = Grid::default();
+            randomize_grid(&mut grid);
+            grid
+        },
+        get_material_set(&mut assets),
+        // Instruct it to use the JumpFlood algorithm to convert the Voxel to an SDF
+        VoxelJumpFlood::default(),
+        // Render as a 3D texture based SDF
+        TexSdf::default(),
+        // Transform the voxel where you like
+        Transform::builder()
+            .with_translate([2., 2., 2.].into())
+            .with_scale([1., 0.5, 1.].into())
             .build(),
     )]);
 
