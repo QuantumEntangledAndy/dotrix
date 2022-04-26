@@ -11,6 +11,7 @@
 struct AoCalc {
   samples: u32;
   steps: u32;
+  number_of_occulders: u32;
   step_size: f32;
 };
 [[group(1), binding(0)]]
@@ -67,6 +68,7 @@ fn cs_main([[builtin(global_invocation_id)]] global_invocation_id: vec3<u32>) {
   let object_id: f32 = depth_buffer_data.g;
   var ao: f32 = 1.;
 
+  let current_ao: f32 = textureLoad(ping_buffer, tex_coords, 0).r;
   if (object_id >= 0.) {
     let depth: f32 = depth_buffer_data.r;
 
@@ -82,9 +84,12 @@ fn cs_main([[builtin(global_invocation_id)]] global_invocation_id: vec3<u32>) {
     ray_in.steps = u_ao_calc.steps;
     ray_in.ao_step_size = u_ao_calc.step_size;
 
-    ao = 1. - clamp(0., .1, ambient_occlusion(ray_in).ao);
+    ao = ambient_occlusion(ray_in).ao;
   }
 
-  textureStore(ao_buffer, tex_coords, vec4<f32>(ao, ao, ao, 1.));
+  let new_ao: f32 = current_ao + (ao / f32(u_ao_calc.number_of_occulders));
+  let radiance: f32 = 1. - clamp(0., .1, new_ao);
+  textureStore(pong_buffer, tex_coords, vec4<f32>(ao, ao, ao, 1.));
+  textureStore(ao_buffer, tex_coords, vec4<f32>(radiance, radiance, radiance, 1.));
 
 }

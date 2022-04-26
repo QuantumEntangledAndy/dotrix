@@ -57,7 +57,7 @@ fn startup(renderer: Const<Renderer>, mut assets: Mut<Assets>) {
 
 fn compute(
     sdf_calc: Const<SdfCalc>,
-    mut sdf_depth: Mut<SdfDepth>,
+    sdf_depth: Const<SdfDepth>,
     mut sdf_ao: Mut<SdfAo>,
     mut sdf_ao_init: Mut<SdfAoInit>,
     mut renderer: Mut<Renderer>,
@@ -141,6 +141,8 @@ fn compute(
 
     let (mut ping, mut pong) = (&sdf_ao.ping_buffer, &sdf_ao.pong_buffer);
 
+    let number_of_occulders = world.query::<(&Grid, &mut TexSdf, &Transform)>().count();
+
     for (grid, sdf, object_2_world) in world.query::<(&Grid, &mut TexSdf, &Transform)>() {
         if rebind {
             sdf.ao.pipeline.bindings.unload();
@@ -154,7 +156,7 @@ fn compute(
         }
 
         // Perform data updates
-        sdf.ao.load(&renderer, &sdf_ao);
+        sdf.ao.load(&renderer, &sdf_ao, number_of_occulders as u32);
         sdf.update(&renderer, grid, object_2_world);
 
         if !sdf.ao.pipeline.ready(&renderer) {

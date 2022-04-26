@@ -20,12 +20,12 @@ impl Default for AoCalc {
 }
 
 impl AoCalc {
-    pub fn load(&mut self, renderer: &Renderer, ao: &SdfAo) {
+    pub fn load(&mut self, renderer: &Renderer, ao: &SdfAo, number_of_occulders: u32) {
         let data = AoCalcGpu {
             samples: ao.samples,
             steps: ao.steps,
             step_size: ao.step_size,
-            padding: Default::default(),
+            number_of_occulders,
         };
 
         renderer.load_buffer(&mut self.data, bytemuck::cast_slice(&[data]))
@@ -38,8 +38,8 @@ impl AoCalc {
 pub(super) struct AoCalcGpu {
     samples: u32,
     steps: u32,
+    number_of_occulders: u32,
     step_size: f32,
-    padding: [u32; 1],
 }
 
 unsafe impl bytemuck::Zeroable for AoCalcGpu {}
