@@ -1,6 +1,7 @@
 use dotrix_core::ecs::System;
 use dotrix_core::Application;
 
+mod ao;
 mod camera;
 mod depth;
 mod jump_flood;
@@ -10,7 +11,8 @@ mod render;
 mod sdf_calc;
 mod tex_sdf;
 
-use depth::*;
+pub use ao::*;
+pub use depth::*;
 pub use jump_flood::*;
 pub use obb::*;
 pub use sdf_calc::*;
@@ -23,6 +25,7 @@ pub fn extension(app: &mut Application) {
 
     camera::extension(app);
     depth::extension(app);
+    ao::extension(app);
     render::extension(app);
     sdf_calc::extension(app);
 }

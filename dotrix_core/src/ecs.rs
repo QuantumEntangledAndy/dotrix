@@ -297,6 +297,7 @@ impl_into_system!((), (A, B, C, D, E));
 impl_into_system!((), (A, B, C, D, E, F));
 impl_into_system!((), (A, B, C, D, E, F, G));
 impl_into_system!((), (A, B, C, D, E, F, G, H));
+impl_into_system!((), (A, B, C, D, E, F, G, H, I));
 
 impl_into_system!((CTX), (A));
 impl_into_system!((CTX), (A, B));
@@ -306,6 +307,7 @@ impl_into_system!((CTX), (A, B, C, D, E));
 impl_into_system!((CTX), (A, B, C, D, E, F));
 impl_into_system!((CTX), (A, B, C, D, E, F, G));
 impl_into_system!((CTX), (A, B, C, D, E, F, G, H));
+impl_into_system!((CTX), (A, B, C, D, E, F, G, H, I));
 
 /// Accessor for [`System`] context to privately store data between runs
 pub struct Context<T> {

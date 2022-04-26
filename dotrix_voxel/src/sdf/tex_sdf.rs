@@ -1,3 +1,4 @@
+use super::ao::AoCalc;
 use super::depth::DepthCalc;
 use crate::{Grid, Obb};
 use dotrix_core::{
@@ -18,6 +19,8 @@ pub struct TexSdf {
     /// Depth Data
     /// Per object data used in the depth calculation
     pub depth: DepthCalc,
+    /// Per object data used in the ao calculation
+    pub ao: AoCalc,
 }
 
 impl Default for TexSdf {
@@ -31,6 +34,7 @@ impl Default for TexSdf {
                 buffer
             },
             depth: Default::default(),
+            ao: Default::default(),
             obb_data: Buffer::uniform("TexSdf OBB"),
             map_data: Buffer::uniform("TexSdf MapData"),
         }

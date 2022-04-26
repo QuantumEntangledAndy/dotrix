@@ -4,11 +4,7 @@
 
 use dotrix_core::Application;
 
-use super::depth::SdfDepth;
-
 pub struct SdfCalc {
-    /// Depth calcaulation specific settings
-    pub depth: SdfDepth,
     /// The scale at which the computation operates at fractions of
     /// screen size.
     ///
@@ -25,10 +21,7 @@ pub struct SdfCalc {
 
 impl Default for SdfCalc {
     fn default() -> Self {
-        Self {
-            depth: Default::default(),
-            working_scale: 0.2,
-        }
+        Self { working_scale: 0.5 }
     }
 }
 

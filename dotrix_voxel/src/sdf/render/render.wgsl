@@ -38,5 +38,5 @@ fn fs_main(in: VertexOutput) -> [[location(0)]] vec4<f32> {
     discard;
   }
 
-  return vec4<f32>(vec3<f32>(color.r)/100., 1.);
+  return vec4<f32>(vec3<f32>(color.r), 1.);
 }

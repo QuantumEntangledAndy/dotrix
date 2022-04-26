@@ -11,11 +11,11 @@ pub(crate) struct SdfDepthInit {
 /// Global Data for depth calculations.
 pub struct SdfDepth {
     // The size of the buffer
-    pub(super) buffer_size: [u32; 2],
+    pub(crate) buffer_size: [u32; 2],
     /// The ping buffer
-    pub(super) ping_buffer: TextureBuffer,
+    pub(crate) ping_buffer: TextureBuffer,
     /// The pong buffer
-    pub(super) pong_buffer: TextureBuffer,
+    pub(crate) pong_buffer: TextureBuffer,
     /// Final depth texture
     pub(crate) depth_buffer: TextureBuffer,
     /// Final normals

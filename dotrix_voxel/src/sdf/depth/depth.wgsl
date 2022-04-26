@@ -24,15 +24,7 @@
 //!
 
 
-struct Camera {
-  proj_view: mat4x4<f32>;
-  static_camera_trans: mat4x4<f32>;
-  pos: vec4<f32>;
-  screen_resolution: vec2<f32>;
-  fov: f32;
-};
-[[group(0), binding(0)]]
-var<uniform> u_camera: Camera;
+{% include "dotrix_voxel/common/camera.inc.wgsl" %}
 
 // Data for the depth calculation
 struct DepthCalc {
@@ -42,12 +34,8 @@ struct DepthCalc {
 [[group(1), binding(0)]]
 var<uniform> u_depth_calc: DepthCalc;
 
-// An Oriented Bounding box
-struct OBB {
-  axis: mat4x4<f32>;
-  center: vec4<f32>;
-  half_widths: vec4<f32>;
-};
+{% include "dotrix_voxel/common/ray.inc.wgsl" %}
+{% include "dotrix_voxel/common/obb.inc.wgsl" %}
 [[group(1), binding(1)]]
 var<uniform> u_bb: OBB;
 
@@ -59,98 +47,6 @@ var pong_buffer: texture_storage_2d<rg32float,write>;
 var normal_buffer: texture_storage_2d<rgba32float,write>;
 [[group(2), binding(3)]]
 var depth_buffer: texture_storage_2d<rg32float,write>;
-
-struct Ray {
-  origin: vec3<f32>;
-  direction: vec3<f32>;
-};
-
-struct RayHit {
-  // How far along the ray before it hits the BB
-  t_in: f32;
-  // How far along the ray before it exits the BB
-  t_out: f32;
-  // Did it hit the BB
-  hit: bool;
-};
-
-// https://www.sciencedirect.com/topics/computer-science/oriented-bounding-box
-//
-// TODO: Optimise for gpu
-fn ray_hit_obb(ray: Ray, bb: OBB) -> RayHit {
-    var tmin: f32 = -3.4028235e38; // -Inf
-    var tmax: f32 = 3.4028235e38; // +Inf
-    let EPS = 1e-4;
-    var out: RayHit;
-    out.hit = false;
-
-    {% for i in range(end=3) %}
-      let r: f32 = dot(bb.axis[{{i}}].xyz, bb.center.xyz - ray.origin.xyz);
-
-      // Check for rays parallel to planes
-      if (abs(dot(ray.direction, bb.axis[{{i}}].xyz)) < EPS) {
-        // Is parallel
-        if (-r - bb.half_widths[{{i}}] > 0. || -r + bb.half_widths[{{i}}] > 0.) {
-          // No hit
-          out.t_in = 0.;
-          out.t_out = 0.;
-          return out;
-        }
-      }
-
-      let s: f32 = dot(bb.axis[{{i}}].xyz, ray.direction);
-      // Ray nor parallel so find intersect parameters
-      var t0: f32 = (r + bb.half_widths[{{i}}]) / s;
-      var t1: f32 = (r - bb.half_widths[{{i}}]) / s;
-
-      // Check ordering
-      if (t0 > t1) {
-        // swap
-        let tmp: f32 = t0;
-        t0 = t1;
-        t1 = tmp;
-      }
-
-      if (t0 > tmin) {
-        tmin = t0;
-      }
-      if (t1 < tmax) {
-        tmax = t1;
-      }
-      // Ray misses entirely
-      if (tmin > tmax) {
-        out.t_in = 0.;
-        out.t_out = 1.;
-        return out;
-      }
-      if (tmax < 0.) {
-        out.t_in = 1.;
-        out.t_out = 0.;
-        return out;
-      }
-
-    {% endfor %}
-
-    // We have hit
-    out.t_in = max(0., tmin);
-    out.t_out = max(tmax, out.t_in);
-    out.hit = true;
-    return out;
-}
-
-fn get_ray_origin() -> vec3<f32> {
-  return u_camera.pos.xyz;
-}
-
-fn get_ray_direction(pixel: vec2<i32>, resolution: vec2<f32>) -> vec3<f32> {
-  let pixel_f32: vec2<f32> = vec2<f32>(f32(pixel.x), f32(pixel.y));
-  let p: vec2<f32> =  (2.0 * pixel_f32 - resolution.xy)/(resolution.y);
-  let z: f32 = -1. / tan(u_camera.fov * 0.5);
-  let view_coordinate: vec4<f32> = vec4<f32>(p.x, p.y, z, 1.);
-  let world_coordinate: vec4<f32> = u_camera.static_camera_trans * view_coordinate;
-
-  return normalize(world_coordinate.xyz);
-}
 
 {% include "dotrix_voxel/circle_trace/map.inc.wgsl" %}
 {% include "dotrix_voxel/circle_trace/accelerated_raytrace.inc.wgsl" %}

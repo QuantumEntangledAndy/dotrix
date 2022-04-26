@@ -3,7 +3,7 @@
 //! This is done with a single triangle that is slapped on the front of the camera
 
 //! Component and buffers
-use super::SdfDepth;
+use super::SdfAo;
 use dotrix_core::{
     assets::{Mesh, Shader},
     ecs::{Const, Mut, System},
@@ -58,7 +58,7 @@ pub fn render(
     mut renderer: Mut<Renderer>,
     mut poster_wall: Mut<PosterWall>,
     assets: Const<Assets>,
-    depth_sdf: Const<SdfDepth>,
+    ao_sdf: Const<SdfAo>,
 ) {
     if poster_wall.pipeline.shader.is_null() {
         poster_wall.pipeline.shader = assets.find::<Shader>(PIPELINE_LABEL).unwrap_or_default();
@@ -89,7 +89,7 @@ pub fn render(
                         vec![Binding::Texture(
                             "Texture",
                             Stage::Fragment,
-                            &depth_sdf.depth_buffer,
+                            &ao_sdf.ao_buffer,
                         )],
                     )],
                     options: RenderOptions::default(),

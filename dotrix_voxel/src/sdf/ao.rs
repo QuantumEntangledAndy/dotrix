@@ -1,12 +1,10 @@
-//! Compute the depth of all sdfs onto a texture
-//!
-//! This uses circle tracing
+//! Compute the SDF ambient occulsion in a compute shader
 //!
 use super::camera::CameraBuffer;
-use crate::{Grid, SdfCalc, TexSdf, VOXEL_TEMPLATES};
+use crate::{Grid, SdfCalc, SdfDepth, TexSdf, VOXEL_TEMPLATES};
 use dotrix_core::{
     assets::Shader,
-    ecs::{Const, Entity, Mut, System},
+    ecs::{Const, Mut, System},
     renderer::{
         Access, BindGroup, Binding, ComputeArgs, ComputeOptions, PipelineLayout, Renderer, Stage,
         WorkGroups,
@@ -21,8 +19,8 @@ mod service;
 pub use self::data::*;
 pub use self::service::*;
 
-const INIT_PIPELINE_LABEL: &str = "dotrix_voxel::sdf::depth_init";
-const PIPELINE_LABEL: &str = "dotrix_voxel::sdf::depth";
+const INIT_PIPELINE_LABEL: &str = "dotrix_voxel::sdf::ao_init";
+const PIPELINE_LABEL: &str = "dotrix_voxel::sdf::ao";
 const PIXELS_PER_WORKGROUP: [usize; 3] = [16, 16, 1];
 
 fn startup(renderer: Const<Renderer>, mut assets: Mut<Assets>) {
@@ -31,13 +29,13 @@ fn startup(renderer: Const<Renderer>, mut assets: Mut<Assets>) {
     context.insert("dotrix_voxel_camera_group", &0);
     context.insert("dotrix_voxel_camera_binding", &0);
     context.insert("map_data_group", &1);
-    context.insert("map_data_binding", &2);
+    context.insert("map_data_binding", &4);
     context.insert("sdf_tex_group", &1);
-    context.insert("sdf_tex_binding", &3);
+    context.insert("sdf_tex_binding", &5);
     let mut shader = Shader {
         name: String::from(PIPELINE_LABEL),
         code: templates
-            .render("dotrix_voxel/depth/depth.wgsl", &context)
+            .render("dotrix_voxel/ao/ao.wgsl", &context)
             .unwrap(),
         ..Default::default()
     };
@@ -48,7 +46,7 @@ fn startup(renderer: Const<Renderer>, mut assets: Mut<Assets>) {
     let mut shader = Shader {
         name: String::from(INIT_PIPELINE_LABEL),
         code: templates
-            .render("dotrix_voxel/depth/init.wgsl", &context)
+            .render("dotrix_voxel/ao/init.wgsl", &context)
             .unwrap(),
         ..Default::default()
     };
@@ -60,14 +58,15 @@ fn startup(renderer: Const<Renderer>, mut assets: Mut<Assets>) {
 fn compute(
     sdf_calc: Const<SdfCalc>,
     mut sdf_depth: Mut<SdfDepth>,
-    mut sdf_depth_init: Mut<SdfDepthInit>,
+    mut sdf_ao: Mut<SdfAo>,
+    mut sdf_ao_init: Mut<SdfAoInit>,
     mut renderer: Mut<Renderer>,
     world: Const<World>,
     assets: Const<Assets>,
     window: Const<Window>,
     globals: Const<Globals>,
 ) {
-    let working_scale = sdf_calc.working_scale * sdf_depth.working_scale;
+    let working_scale = sdf_calc.working_scale * sdf_ao.working_scale;
     let buffer_size = {
         let ws = window.inner_size();
         [
@@ -75,26 +74,26 @@ fn compute(
             (ws[1] as f32 * working_scale) as u32,
         ]
     };
-    let rebind = sdf_depth.load(&renderer, buffer_size);
+    let rebind = sdf_ao.load(&renderer, buffer_size);
 
     let workgroup_size_x = (buffer_size[0] as f32 / PIXELS_PER_WORKGROUP[0] as f32).ceil() as u32;
     let workgroup_size_y = (buffer_size[0] as f32 / PIXELS_PER_WORKGROUP[1] as f32).ceil() as u32;
     let workgroup_size_z = 1;
     if rebind {
-        sdf_depth_init.init_pipeline.bindings.unload();
+        sdf_ao_init.init_pipeline.bindings.unload();
     }
-    if sdf_depth_init.init_pipeline.shader.is_null() {
-        sdf_depth_init.init_pipeline.shader = assets
+    if sdf_ao_init.init_pipeline.shader.is_null() {
+        sdf_ao_init.init_pipeline.shader = assets
             .find::<Shader>(INIT_PIPELINE_LABEL)
             .unwrap_or_default();
     }
-    if !sdf_depth_init.init_pipeline.cycle(&renderer) {
+    if !sdf_ao_init.init_pipeline.cycle(&renderer) {
         return;
     }
-    if !sdf_depth_init.init_pipeline.ready(&renderer) {
-        if let Some(shader) = assets.get(sdf_depth_init.init_pipeline.shader) {
+    if !sdf_ao_init.init_pipeline.ready(&renderer) {
+        if let Some(shader) = assets.get(sdf_ao_init.init_pipeline.shader) {
             renderer.bind(
-                &mut sdf_depth_init.init_pipeline,
+                &mut sdf_ao_init.init_pipeline,
                 PipelineLayout::Compute {
                     label: String::from(INIT_PIPELINE_LABEL),
                     shader,
@@ -104,25 +103,19 @@ fn compute(
                             Binding::StorageTexture(
                                 "SdfPing",
                                 Stage::Compute,
-                                &sdf_depth.ping_buffer,
+                                &sdf_ao.ping_buffer,
                                 Access::WriteOnly,
                             ),
                             Binding::StorageTexture(
                                 "SdfPing",
                                 Stage::Compute,
-                                &sdf_depth.ping_buffer,
+                                &sdf_ao.ping_buffer,
                                 Access::WriteOnly,
                             ),
                             Binding::StorageTexture(
                                 "SdfNormal",
                                 Stage::Compute,
-                                &sdf_depth.normal_buffer,
-                                Access::WriteOnly,
-                            ),
-                            Binding::StorageTexture(
-                                "SdfDepth",
-                                Stage::Compute,
-                                &sdf_depth.depth_buffer,
+                                &sdf_ao.ao_buffer,
                                 Access::WriteOnly,
                             ),
                         ],
@@ -132,11 +125,11 @@ fn compute(
             );
         }
     }
-    if !sdf_depth_init.init_pipeline.ready(&renderer) {
+    if !sdf_ao_init.init_pipeline.ready(&renderer) {
         return;
     }
     renderer.compute(
-        &mut sdf_depth_init.init_pipeline,
+        &mut sdf_ao_init.init_pipeline,
         &ComputeArgs {
             work_groups: WorkGroups {
                 x: workgroup_size_x,
@@ -146,29 +139,27 @@ fn compute(
         },
     );
 
-    let (mut ping, mut pong) = (&sdf_depth.ping_buffer, &sdf_depth.pong_buffer);
+    let (mut ping, mut pong) = (&sdf_ao.ping_buffer, &sdf_ao.pong_buffer);
 
-    for (grid, sdf, object_2_world, entity) in
-        world.query::<(&Grid, &mut TexSdf, &Transform, &Entity)>()
-    {
+    for (grid, sdf, object_2_world) in world.query::<(&Grid, &mut TexSdf, &Transform)>() {
         if rebind {
-            sdf.depth.pipeline.bindings.unload();
+            sdf.ao.pipeline.bindings.unload();
         }
 
-        if sdf.depth.pipeline.shader.is_null() {
-            sdf.depth.pipeline.shader = assets.find::<Shader>(PIPELINE_LABEL).unwrap_or_default();
+        if sdf.ao.pipeline.shader.is_null() {
+            sdf.ao.pipeline.shader = assets.find::<Shader>(PIPELINE_LABEL).unwrap_or_default();
         }
-        if !sdf.depth.pipeline.cycle(&renderer) {
+        if !sdf.ao.pipeline.cycle(&renderer) {
             continue;
         }
 
         // Perform data updates
-        sdf.depth.load(&renderer, &sdf_depth, entity);
+        sdf.ao.load(&renderer, &sdf_ao);
         sdf.update(&renderer, grid, object_2_world);
 
-        if !sdf.depth.pipeline.ready(&renderer) {
+        if !sdf.ao.pipeline.ready(&renderer) {
             // Rebind required
-            if let Some(shader) = assets.get(sdf.depth.pipeline.shader) {
+            if let Some(shader) = assets.get(sdf.ao.pipeline.shader) {
                 // Shader ready Bind it
 
                 // Get data
@@ -177,7 +168,7 @@ fn compute(
                     .expect("CameraBuffer buffer must be loaded");
 
                 renderer.bind(
-                    &mut sdf.depth.pipeline,
+                    &mut sdf.ao.pipeline,
                     PipelineLayout::Compute {
                         label: String::from(PIPELINE_LABEL),
                         shader,
@@ -193,8 +184,18 @@ fn compute(
                             BindGroup::new(
                                 "Locals",
                                 vec![
-                                    Binding::Uniform("Data", Stage::Compute, &sdf.depth.data),
+                                    Binding::Uniform("Data", Stage::Compute, &sdf.ao.data),
                                     Binding::Uniform("OBB", Stage::Compute, &sdf.obb_data),
+                                    Binding::Texture(
+                                        "Depth",
+                                        Stage::Compute,
+                                        &sdf_depth.depth_buffer,
+                                    ),
+                                    Binding::Texture(
+                                        "Normals",
+                                        Stage::Compute,
+                                        &sdf_depth.normal_buffer,
+                                    ),
                                     Binding::Uniform("Map", Stage::Compute, &sdf.map_data),
                                     Binding::Texture3D("SdfTex", Stage::Compute, &sdf.buffer),
                                 ],
@@ -210,15 +211,9 @@ fn compute(
                                         Access::WriteOnly,
                                     ),
                                     Binding::StorageTexture(
-                                        "Normals",
+                                        "AoBuffer",
                                         Stage::Compute,
-                                        &sdf_depth.normal_buffer,
-                                        Access::WriteOnly,
-                                    ),
-                                    Binding::StorageTexture(
-                                        "DepthBuffer",
-                                        Stage::Compute,
-                                        &sdf_depth.depth_buffer,
+                                        &sdf_ao.ao_buffer,
                                         Access::WriteOnly,
                                     ),
                                 ],
@@ -227,12 +222,12 @@ fn compute(
                         options: ComputeOptions::default(),
                     },
                 );
-                (ping, pong) = (&sdf_depth.ping_buffer, &sdf_depth.pong_buffer);
+                (ping, pong) = (&sdf_ao.ping_buffer, &sdf_ao.pong_buffer);
             }
         }
 
         renderer.compute(
-            &mut sdf.depth.pipeline,
+            &mut sdf.ao.pipeline,
             &ComputeArgs {
                 work_groups: WorkGroups {
                     x: workgroup_size_x,
@@ -245,8 +240,8 @@ fn compute(
 }
 
 pub(super) fn extension(app: &mut Application) {
-    app.add_service(SdfDepth::default());
-    app.add_service(SdfDepthInit::default());
+    app.add_service(SdfAo::default());
+    app.add_service(SdfAoInit::default());
     app.add_system(System::from(startup));
     app.add_system(System::from(compute));
 }
