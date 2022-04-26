@@ -72,3 +72,10 @@ fn ray_hit_obb(ray: Ray, bb: OBB) -> RayHit {
     out.hit = true;
     return out;
 }
+
+// A quick dirty check to see how close we are to a bouding sphere
+// based on a obb
+fn approx_distance_obb(p: vec3<f32>, bb: OBB) -> f32 {
+  let radius: f32  = max(bb.half_widths.x, max(bb.half_widths.y, bb.half_widths.z));
+  return distance(p, bb.center.xyz) - radius;
+}
