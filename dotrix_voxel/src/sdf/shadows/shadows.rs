@@ -19,8 +19,8 @@ mod service;
 pub use self::data::*;
 pub use self::service::*;
 
-const INIT_PIPELINE_LABEL: &str = "dotrix_voxel::sdf::ao_init";
-const PIPELINE_LABEL: &str = "dotrix_voxel::sdf::ao";
+const INIT_PIPELINE_LABEL: &str = "dotrix_voxel::sdf::shadow_init";
+const PIPELINE_LABEL: &str = "dotrix_voxel::sdf::shadow";
 const PIXELS_PER_WORKGROUP: [usize; 3] = [16, 16, 1];
 
 fn startup(renderer: Const<Renderer>, mut assets: Mut<Assets>) {
@@ -35,7 +35,7 @@ fn startup(renderer: Const<Renderer>, mut assets: Mut<Assets>) {
     let mut shader = Shader {
         name: String::from(PIPELINE_LABEL),
         code: templates
-            .render("dotrix_voxel/ao/ao.wgsl", &context)
+            .render("dotrix_voxel/shadow/shadow.wgsl", &context)
             .unwrap(),
         ..Default::default()
     };
@@ -46,7 +46,7 @@ fn startup(renderer: Const<Renderer>, mut assets: Mut<Assets>) {
     let mut shader = Shader {
         name: String::from(INIT_PIPELINE_LABEL),
         code: templates
-            .render("dotrix_voxel/ao/init.wgsl", &context)
+            .render("dotrix_voxel/shadow/init.wgsl", &context)
             .unwrap(),
         ..Default::default()
     };
@@ -58,15 +58,15 @@ fn startup(renderer: Const<Renderer>, mut assets: Mut<Assets>) {
 fn compute(
     sdf_calc: Const<SdfCalc>,
     sdf_depth: Const<SdfDepth>,
-    mut sdf_ao: Mut<SdfAo>,
-    mut sdf_ao_init: Mut<SdfAoInit>,
+    mut sdf_shadow: Mut<SdfShadow>,
+    mut sdf_shadow_init: Mut<SdfShadowInit>,
     mut renderer: Mut<Renderer>,
     world: Const<World>,
     assets: Const<Assets>,
     window: Const<Window>,
     globals: Const<Globals>,
 ) {
-    let working_scale = sdf_calc.working_scale * sdf_ao.working_scale;
+    let working_scale = sdf_calc.working_scale * sdf_shadow.working_scale;
     let buffer_size = {
         let ws = window.inner_size();
         [
@@ -74,26 +74,26 @@ fn compute(
             (ws[1] as f32 * working_scale) as u32,
         ]
     };
-    let rebind = sdf_ao.load(&renderer, buffer_size);
+    let rebind = sdf_shadow.load(&renderer, buffer_size);
 
     let workgroup_size_x = (buffer_size[0] as f32 / PIXELS_PER_WORKGROUP[0] as f32).ceil() as u32;
     let workgroup_size_y = (buffer_size[0] as f32 / PIXELS_PER_WORKGROUP[1] as f32).ceil() as u32;
     let workgroup_size_z = 1;
     if rebind {
-        sdf_ao_init.init_pipeline.bindings.unload();
+        sdf_shadow_init.init_pipeline.bindings.unload();
     }
-    if sdf_ao_init.init_pipeline.shader.is_null() {
-        sdf_ao_init.init_pipeline.shader = assets
+    if sdf_shadow_init.init_pipeline.shader.is_null() {
+        sdf_shadow_init.init_pipeline.shader = assets
             .find::<Shader>(INIT_PIPELINE_LABEL)
             .unwrap_or_default();
     }
-    if !sdf_ao_init.init_pipeline.cycle(&renderer) {
+    if !sdf_shadow_init.init_pipeline.cycle(&renderer) {
         return;
     }
-    if !sdf_ao_init.init_pipeline.ready(&renderer) {
-        if let Some(shader) = assets.get(sdf_ao_init.init_pipeline.shader) {
+    if !sdf_shadow_init.init_pipeline.ready(&renderer) {
+        if let Some(shader) = assets.get(sdf_shadow_init.init_pipeline.shader) {
             renderer.bind(
-                &mut sdf_ao_init.init_pipeline,
+                &mut sdf_shadow_init.init_pipeline,
                 PipelineLayout::Compute {
                     label: String::from(INIT_PIPELINE_LABEL),
                     shader,
@@ -103,19 +103,19 @@ fn compute(
                             Binding::StorageTexture(
                                 "SdfPing",
                                 Stage::Compute,
-                                &sdf_ao.ping_buffer,
+                                &sdf_shadow.ping_buffer,
                                 Access::WriteOnly,
                             ),
                             Binding::StorageTexture(
                                 "SdfPing",
                                 Stage::Compute,
-                                &sdf_ao.ping_buffer,
+                                &sdf_shadow.ping_buffer,
                                 Access::WriteOnly,
                             ),
                             Binding::StorageTexture(
-                                "SdfAo",
+                                "SdfNormal",
                                 Stage::Compute,
-                                &sdf_ao.ao_buffer,
+                                &sdf_shadow.shadow_buffer,
                                 Access::WriteOnly,
                             ),
                         ],
@@ -125,11 +125,11 @@ fn compute(
             );
         }
     }
-    if !sdf_ao_init.init_pipeline.ready(&renderer) {
+    if !sdf_shadow_init.init_pipeline.ready(&renderer) {
         return;
     }
     renderer.compute(
-        &mut sdf_ao_init.init_pipeline,
+        &mut sdf_shadow_init.init_pipeline,
         &ComputeArgs {
             work_groups: WorkGroups {
                 x: workgroup_size_x,
@@ -139,29 +139,30 @@ fn compute(
         },
     );
 
-    let (mut ping, mut pong) = (&sdf_ao.ping_buffer, &sdf_ao.pong_buffer);
+    let (mut ping, mut pong) = (&sdf_shadow.ping_buffer, &sdf_shadow.pong_buffer);
 
     let number_of_occulders = world.query::<(&Grid, &mut TexSdf, &Transform)>().count();
 
     for (grid, sdf, object_2_world) in world.query::<(&Grid, &mut TexSdf, &Transform)>() {
         if rebind {
-            sdf.ao.pipeline.bindings.unload();
+            sdf.shadow.pipeline.bindings.unload();
         }
 
-        if sdf.ao.pipeline.shader.is_null() {
-            sdf.ao.pipeline.shader = assets.find::<Shader>(PIPELINE_LABEL).unwrap_or_default();
+        if sdf.shadow.pipeline.shader.is_null() {
+            sdf.shadow.pipeline.shader = assets.find::<Shader>(PIPELINE_LABEL).unwrap_or_default();
         }
-        if !sdf.ao.pipeline.cycle(&renderer) {
+        if !sdf.shadow.pipeline.cycle(&renderer) {
             continue;
         }
 
         // Perform data updates
-        sdf.ao.load(&renderer, &sdf_ao, number_of_occulders as u32);
+        sdf.shadow
+            .load(&renderer, &sdf_shadow, number_of_occulders as u32);
         sdf.update(&renderer, grid, object_2_world);
 
-        if !sdf.ao.pipeline.ready(&renderer) {
+        if !sdf.shadow.pipeline.ready(&renderer) {
             // Rebind required
-            if let Some(shader) = assets.get(sdf.ao.pipeline.shader) {
+            if let Some(shader) = assets.get(sdf.shadow.pipeline.shader) {
                 // Shader ready Bind it
 
                 // Get data
@@ -170,7 +171,7 @@ fn compute(
                     .expect("CameraBuffer buffer must be loaded");
 
                 renderer.bind(
-                    &mut sdf.ao.pipeline,
+                    &mut sdf.shadow.pipeline,
                     PipelineLayout::Compute {
                         label: String::from(PIPELINE_LABEL),
                         shader,
@@ -186,7 +187,7 @@ fn compute(
                             BindGroup::new(
                                 "Locals",
                                 vec![
-                                    Binding::Uniform("Data", Stage::Compute, &sdf.ao.data),
+                                    Binding::Uniform("Data", Stage::Compute, &sdf.shadow.data),
                                     Binding::Uniform("OBB", Stage::Compute, &sdf.obb_data),
                                     Binding::Texture(
                                         "Depth",
@@ -213,9 +214,9 @@ fn compute(
                                         Access::WriteOnly,
                                     ),
                                     Binding::StorageTexture(
-                                        "AoBuffer",
+                                        "ShadowBuffer",
                                         Stage::Compute,
-                                        &sdf_ao.ao_buffer,
+                                        &sdf_shadow.shadow_buffer,
                                         Access::WriteOnly,
                                     ),
                                 ],
@@ -224,12 +225,12 @@ fn compute(
                         options: ComputeOptions::default(),
                     },
                 );
-                (ping, pong) = (&sdf_ao.ping_buffer, &sdf_ao.pong_buffer);
+                (ping, pong) = (&sdf_shadow.ping_buffer, &sdf_shadow.pong_buffer);
             }
         }
 
         renderer.compute(
-            &mut sdf.ao.pipeline,
+            &mut sdf.shadow.pipeline,
             &ComputeArgs {
                 work_groups: WorkGroups {
                     x: workgroup_size_x,
@@ -242,8 +243,8 @@ fn compute(
 }
 
 pub(super) fn extension(app: &mut Application) {
-    app.add_service(SdfAo::default());
-    app.add_service(SdfAoInit::default());
+    app.add_service(SdfShadow::default());
+    app.add_service(SdfShadowInit::default());
     app.add_system(System::from(startup));
     app.add_system(System::from(compute));
 }

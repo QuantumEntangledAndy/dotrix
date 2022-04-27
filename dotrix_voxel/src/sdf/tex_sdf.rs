@@ -1,5 +1,6 @@
 use super::ao::AoCalc;
 use super::depth::DepthCalc;
+use super::shadows::ShadowCalc;
 use crate::{Grid, Obb};
 use dotrix_core::{
     renderer::{Buffer, Renderer, Texture as TextureBuffer},
@@ -21,6 +22,8 @@ pub struct TexSdf {
     pub depth: DepthCalc,
     /// Per object data used in the ao calculation
     pub ao: AoCalc,
+    /// Per object data used in the shadow calculation
+    pub shadow: ShadowCalc,
 }
 
 impl Default for TexSdf {
@@ -35,6 +38,7 @@ impl Default for TexSdf {
             },
             depth: Default::default(),
             ao: Default::default(),
+            shadow: Default::default(),
             obb_data: Buffer::uniform("TexSdf OBB"),
             map_data: Buffer::uniform("TexSdf MapData"),
         }

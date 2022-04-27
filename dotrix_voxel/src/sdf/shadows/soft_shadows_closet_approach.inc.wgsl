@@ -40,13 +40,15 @@ fn softshadow (input: SoftShadowInput) -> SoftShadowResult
   var rc: f32 = 0.; // current large such that y=0.0 at first
   var rn: f32 = map(o + (t)*d); // next
 
-  var radiance: f32 = 1.;
+
+  var out: SoftShadowResult;
+  out.radiance = 1.;
 
   for(var i: u32 = 0u; i < input.max_iterations && t < input.max_distance; i = i + 1u)
   {
     let y: f32 = rn*rn/(2.0*rc);
     let approx_distance: f32 = sqrt(rn*rn-y*y);
-    radiance = min(radiance, input.k * approx_distance/max(0.0,t-y));
+    out.radiance = min(out.radiance, input.k * approx_distance/max(0.0,t-y));
 
     di = rc + STEP_SIZE_REDUCTION * rc * max( (di - rp + rc) / (di + rp - rc), 0.6);
     rn = map(o + (t + di)*d);
@@ -55,17 +57,14 @@ fn softshadow (input: SoftShadowInput) -> SoftShadowResult
       di = rc;
       rn = map(o + (t + di)*d);
     }
-    // if(rn < 0.001) {
-    //   var out: SoftShadowResult;
-    //   out.radiance = 0.;
-    //   return out;
-    // }
+    if(rn < 0.001) {
+      out.radiance = 0.;
+      break;
+    }
     t = t + di;
 
     rp = rc;
     rc = rn;
   }
-  var out: SoftShadowResult;
-  out.radiance = radiance;
   return out;
 }

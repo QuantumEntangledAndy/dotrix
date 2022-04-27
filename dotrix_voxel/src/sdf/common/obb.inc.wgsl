@@ -79,3 +79,13 @@ fn approx_distance_obb(p: vec3<f32>, bb: OBB) -> f32 {
   let radius: f32  = max(bb.half_widths.x, max(bb.half_widths.y, bb.half_widths.z));
   return distance(p, bb.center.xyz) - radius;
 }
+
+// Create a new obb with expanded size
+fn expand_obb(bb: OBB, factor: f32) -> OBB {
+  var new_bb: OBB;
+  new_bb.center = bb.center;
+  new_bb.axis = bb.axis;
+  new_bb.half_widths = bb.half_widths * factor;
+
+  return new_bb;
+}

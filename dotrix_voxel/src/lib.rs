@@ -60,6 +60,22 @@ lazy_static! {
                     "dotrix_voxel/ao/hemisphere_ambient_occulsion.inc.wgsl",
                     include_str!("./sdf/ao/hemisphere_ambient_occulsion.inc.wgsl"),
                 ),
+                (
+                    "dotrix_voxel/shadows/init.wgsl",
+                    include_str!("./sdf/shadows/init.wgsl"),
+                ),
+                (
+                    "dotrix_voxel/shadows/shadows.wgsl",
+                    include_str!("./sdf/shadows/shadows.wgsl"),
+                ),
+                (
+                    "dotrix_voxel/shadows/soft_shadows_closet_approach.inc.wgsl",
+                    include_str!("./sdf/shadows/soft_shadows_closet_approach.inc.wgsl"),
+                ),
+                (
+                    "dotrix_voxel/shading/lighting.inc.wgsl",
+                    include_str!("./sdf/shading/lighting.inc.wgsl"),
+                ),
             ])
             .unwrap();
         templates

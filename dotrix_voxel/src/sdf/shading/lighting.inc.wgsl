@@ -1,3 +1,6 @@
+let MAX_LIGHTS_COUNT: u32 = {{ max_lights_count }};
+let PI: f32 = 3.14159;
+
 struct LightCalcOutput {
   light_direction: vec3<f32>;
   radiance: vec3<f32>;
@@ -32,20 +35,18 @@ struct SpotLight {
     outer_cut_off: f32;
 };
 
-struct GenericLight {
-  position: vec4<f32>;
-  direction: vec4<f32>;
-  color: vec4<f32>;
-  parameters: vec4<f32>;
-  kind: u32; // 1 = DirectionalLight, 2 = PointLight, 3 = SimpleLight, 4 = SpotLight, 0 = None
+struct Light {
+    camera_position: vec4<f32>;
+    ambient: vec4<f32>;
+    count: vec4<u32>;
+    directional: [[stride(32)]] array<DirectionalLight, MAX_LIGHTS_COUNT>;
+    point: [[stride(48)]] array<PointLight, MAX_LIGHTS_COUNT>;
+    simple: [[stride(32)]] array<SimpleLight, MAX_LIGHTS_COUNT>;
+    spot: [[stride(64)]] array<SpotLight, MAX_LIGHTS_COUNT>;
 };
 
-struct Lights {
-    generic_lights: array<GenericLight>;
-};
-
-[[group(0), binding(2)]]
-var<storage, read> s_lights: Lights;
+[[group({{ lighting_bind_group }}), binding({{ lighting_binding }})]]
+var<uniform> u_light: Light;
 
 fn calculate_directional(
     light: DirectionalLight,
@@ -107,55 +108,55 @@ fn calculate_spot(
     return out;
 }
 
-fn calculate_light_ray_for(
-    camera_index: u32,
+// This will get the direction direction and intensity of
+// the nth light towards a position
+// If used in conjectuion with `get_light_count`
+// It allows for more consistent iter code by providing
+// A standard single data `LightCalcOutput` for any light
+// regardless of type
+fn calculate_nth_light_ray(
+    in_camera_index: u32,
     position: vec3<f32>,
 ) -> LightCalcOutput {
-  var generic_light: GenericLight = s_lights.generic_lights[camera_index];
-  switch (generic_light.kind) {
-    case 1: {
-      var light: DirectionalLight;
-      light.direction = generic_light.direction;
-      light.color = generic_light.color;
-      return calculate_directional(light);
-    }
-    case 2: {
-      var light: PointLight;
-      light.position = generic_light.position;
-      light.color = generic_light.color;
-      light.attenuation = generic_light.parameters;
-      return calculate_point(light, position);
-    }
-    case 3: {
-      var light: SimpleLight;
-      light.position = generic_light.position;
-      light.color = generic_light.color;
-      return calculate_simple(light, position);
-    }
-    case 4: {
-      var light: SpotLight;
-      light.direction = generic_light.direction;
-      light.position = generic_light.position;
-      light.color = generic_light.color;
-      light.cut_off = generic_light.parameters.x;
-      light.outer_cut_off = generic_light.parameters.y;
-      return calculate_spot(light, position);
-    }
-    default: {
-      var out: LightCalcOutput;
-      out.light_direction = vec3<f32>(0.);
-      out.radiance = vec3<f32>(0.);
-      return out;
-    }
+  var camera_index: u32 = in_camera_index;
+  // directional
+  let dir_count = min(u32(u_light.count.x), MAX_LIGHTS_COUNT);
+  if (camera_index < dir_count) {
+    var light: DirectionalLight = u_light.directional[camera_index];
+    return calculate_directional(light);
   }
+  camera_index = camera_index - dir_count;
+  // point
+  let point_count = min(u32(u_light.count.y), MAX_LIGHTS_COUNT);
+  if (camera_index < point_count) {
+    var light: PointLight = u_light.point[camera_index];
+    return calculate_point(light, position);
+  }
+  camera_index = camera_index - point_count;
+  // simple
+  let simple_count = min(u32(u_light.count.z), MAX_LIGHTS_COUNT);
+  if (camera_index < simple_count) {
+    var light: SimpleLight = u_light.simple[camera_index];
+    return calculate_simple(light, position);
+  }
+  camera_index = camera_index - simple_count;
+  // spot
+  let spot_count = min(u32(u_light.count.w), MAX_LIGHTS_COUNT);
+  if (camera_index < spot_count) {
+    var light: SpotLight = u_light.spot[camera_index];
+    return calculate_spot(light, position);
+  }
+  // Trying to access a non existant light
+  var oob: LightCalcOutput;
+  oob.light_direction = vec3<f32>(0.);
+  oob.radiance = vec3<f32>(0.);
+  return oob;
 }
 
-// Ambient is stored in the last light
 fn get_light_count() -> u32 {
-  return arrayLength(&s_lights.generic_lights) - 1u;
+  return u_light.count.x + u_light.count.y + u_light.count.z + u_light.count.w;
 }
 
 fn get_ambient() -> vec3<f32> {
-  let idx: u32 = u32(arrayLength(&s_lights.generic_lights)) - 1u;
-  return s_lights.generic_lights[idx].color.xyz;
+  return u_light.ambient.xyz;
 }
