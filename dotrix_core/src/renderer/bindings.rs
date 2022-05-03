@@ -1,4 +1,8 @@
-use super::{Access, Buffer, Context, PipelineInstance, Sampler, Texture};
+use super::{
+    Access, Context, GpuBuffer, GpuTexture, IdOrBuffer, IdOrTexture, PipelineInstance,
+    RendererError, Sampler,
+};
+use crate::{assets::Asset, Assets};
 
 /// Rendering stage
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -25,7 +29,150 @@ impl From<&Stage> for wgpu::ShaderStages {
 }
 
 /// Binding types (Label, Stage, Buffer)
-pub enum Binding<'a> {
+pub enum MaybeBinding<'a, Buffer, Texture>
+where
+    Buffer: IdOrBuffer<'a>,
+    Buffer::BaseType: GpuBuffer,
+    Texture: IdOrTexture<'a>,
+    Texture::BaseType: GpuTexture,
+{
+    /// Uniform binding
+    Uniform(&'a str, Stage, Buffer),
+    /// Texture binding
+    Texture(&'a str, Stage, Texture),
+    /// Cube Texture binding
+    TextureCube(&'a str, Stage, Texture),
+    /// 2D Texture Array binding
+    TextureArray(&'a str, Stage, Texture),
+    /// 3D Texture binding
+    Texture3D(&'a str, Stage, Texture),
+    /// Storage texture binding
+    StorageTexture(&'a str, Stage, Texture, Access),
+    /// Storage texture cube binding
+    StorageTextureCube(&'a str, Stage, Texture, Access),
+    /// Storage 2D texture array binding
+    StorageTextureArray(&'a str, Stage, Texture, Access),
+    /// Storage texture binding 3D
+    StorageTexture3D(&'a str, Stage, Texture, Access),
+    /// Texture sampler binding
+    Sampler(&'a str, Stage, &'a Sampler),
+    /// Storage binding
+    Storage(&'a str, Stage, Buffer),
+}
+
+impl<'a, Buffer, Texture> MaybeBinding<'a, Buffer, Texture>
+where
+    Buffer: 'a + IdOrBuffer<'a>,
+    Buffer::BaseType: GpuBuffer,
+    Texture: 'a + IdOrTexture<'a>,
+    Texture::BaseType: GpuTexture,
+{
+    /// Resolve all assets or Error
+    pub fn make_concrete<T>(
+        &'a self,
+        assets: &'a Assets,
+    ) -> Result<ConcreteBinding<'a, Buffer::BaseType, Texture::BaseType>, RendererError<T>>
+    where
+        T: Asset,
+        RendererError<T>: std::convert::From<RendererError<Buffer::BaseType>>,
+        RendererError<T>: std::convert::From<RendererError<Texture::BaseType>>,
+    {
+        Ok(match self {
+            MaybeBinding::Uniform(label, stage, maybe) => {
+                ConcreteBinding::Uniform(label, *stage, maybe.get_asset(assets)?)
+            }
+            MaybeBinding::Storage(label, stage, maybe) => {
+                ConcreteBinding::Storage(label, *stage, maybe.get_asset(assets)?)
+            }
+            MaybeBinding::Texture(label, stage, maybe) => {
+                ConcreteBinding::Texture(label, *stage, maybe.get_asset(assets)?)
+            }
+            MaybeBinding::TextureCube(label, stage, maybe) => {
+                ConcreteBinding::TextureCube(label, *stage, maybe.get_asset(assets)?)
+            }
+            MaybeBinding::TextureArray(label, stage, maybe) => {
+                ConcreteBinding::TextureArray(label, *stage, maybe.get_asset(assets)?)
+            }
+            MaybeBinding::Texture3D(label, stage, maybe) => {
+                ConcreteBinding::Texture3D(label, *stage, maybe.get_asset(assets)?)
+            }
+            MaybeBinding::StorageTexture(label, stage, maybe, access) => {
+                ConcreteBinding::StorageTexture(label, *stage, maybe.get_asset(assets)?, *access)
+            }
+            MaybeBinding::StorageTextureCube(label, stage, maybe, access) => {
+                ConcreteBinding::StorageTextureCube(
+                    label,
+                    *stage,
+                    maybe.get_asset(assets)?,
+                    *access,
+                )
+            }
+            MaybeBinding::StorageTextureArray(label, stage, maybe, access) => {
+                ConcreteBinding::StorageTextureArray(
+                    label,
+                    *stage,
+                    maybe.get_asset(assets)?,
+                    *access,
+                )
+            }
+            MaybeBinding::StorageTexture3D(label, stage, maybe, access) => {
+                ConcreteBinding::StorageTexture3D(label, *stage, maybe.get_asset(assets)?, *access)
+            }
+            MaybeBinding::Sampler(label, stage, concrete) => {
+                ConcreteBinding::Sampler(label, *stage, concrete)
+            }
+        })
+    }
+}
+
+/// Bind Group holding bindings
+pub struct MaybeBindGroup<'a, Buffer, Texture>
+where
+    Buffer: IdOrBuffer<'a>,
+    Buffer::BaseType: GpuBuffer,
+    Texture: IdOrTexture<'a>,
+    Texture::BaseType: GpuTexture,
+{
+    /// Text label of the Bind group
+    pub label: &'a str,
+    /// List of bindings
+    pub bindings: Vec<MaybeBinding<'a, Buffer, Texture>>,
+}
+
+impl<'a, Buffer, Texture> MaybeBindGroup<'a, Buffer, Texture>
+where
+    Buffer: 'a + IdOrBuffer<'a>,
+    Buffer::BaseType: GpuBuffer,
+    Texture: 'a + IdOrTexture<'a>,
+    Texture::BaseType: GpuTexture,
+{
+    /// Resolve all assets or Error
+    pub fn make_concrete<T>(
+        &'a self,
+        assets: &'a Assets,
+    ) -> Result<ConcreteBindGroup<'a, Buffer::BaseType, Texture::BaseType>, RendererError<T>>
+    where
+        T: Asset,
+        RendererError<T>: std::convert::From<RendererError<Buffer::BaseType>>,
+        RendererError<T>: std::convert::From<RendererError<Texture::BaseType>>,
+    {
+        Ok(ConcreteBindGroup {
+            label: self.label,
+            bindings: self
+                .bindings
+                .iter()
+                .map(|maybe| maybe.make_concrete(assets))
+                .collect::<Result<Vec<_>, _>>()?,
+        })
+    }
+}
+
+/// Binding with all Id's resolved to Assets
+pub enum ConcreteBinding<'a, Buffer, Texture>
+where
+    Buffer: GpuBuffer,
+    Texture: GpuTexture,
+{
     /// Uniform binding
     Uniform(&'a str, Stage, &'a Buffer),
     /// Texture binding
@@ -50,17 +197,25 @@ pub enum Binding<'a> {
     Storage(&'a str, Stage, &'a Buffer),
 }
 
-/// Bind Group holding bindings
-pub struct BindGroup<'a> {
+/// Bind Group holding bindings with Assets and not Ids
+pub struct ConcreteBindGroup<'a, Buffer, Texture>
+where
+    Buffer: GpuBuffer,
+    Texture: GpuTexture,
+{
     /// Text label of the Bind group
     pub label: &'a str,
     /// List of bindings
-    pub bindings: Vec<Binding<'a>>,
+    pub bindings: Vec<ConcreteBinding<'a, Buffer, Texture>>,
 }
 
-impl<'a> BindGroup<'a> {
+impl<'a, Buffer, Texture> ConcreteBindGroup<'a, Buffer, Texture>
+where
+    Buffer: GpuBuffer,
+    Texture: GpuTexture,
+{
     /// Constructs new Bind Group
-    pub fn new(label: &'a str, bindings: Vec<Binding<'a>>) -> Self {
+    pub fn new(label: &'a str, bindings: Vec<ConcreteBinding<'a, Buffer, Texture>>) -> Self {
         Self { label, bindings }
     }
 
@@ -71,7 +226,7 @@ impl<'a> BindGroup<'a> {
             .iter()
             .enumerate()
             .map(|(index, binding)| match binding {
-                Binding::Uniform(_, stage, _) => wgpu::BindGroupLayoutEntry {
+                ConcreteBinding::Uniform(_, stage, _) => wgpu::BindGroupLayoutEntry {
                     binding: index as u32,
                     visibility: stage.into(),
                     ty: wgpu::BindingType::Buffer {
@@ -81,100 +236,102 @@ impl<'a> BindGroup<'a> {
                     },
                     count: None,
                 },
-                Binding::Texture(_, stage, texture) => wgpu::BindGroupLayoutEntry {
+                ConcreteBinding::Texture(_, stage, texture) => wgpu::BindGroupLayoutEntry {
                     binding: index as u32,
                     visibility: stage.into(),
                     ty: wgpu::BindingType::Texture {
                         multisampled: false,
-                        sample_type: texture.sample_type(),
+                        sample_type: texture.get_texture().sample_type(),
                         view_dimension: wgpu::TextureViewDimension::D2,
                     },
                     count: None,
                 },
-                Binding::TextureCube(_, stage, texture) => wgpu::BindGroupLayoutEntry {
+                ConcreteBinding::TextureCube(_, stage, texture) => wgpu::BindGroupLayoutEntry {
                     binding: index as u32,
                     visibility: stage.into(),
                     ty: wgpu::BindingType::Texture {
                         multisampled: false,
-                        sample_type: texture.sample_type(),
+                        sample_type: texture.get_texture().sample_type(),
                         view_dimension: wgpu::TextureViewDimension::Cube,
                     },
                     count: None,
                 },
-                Binding::TextureArray(_, stage, texture) => wgpu::BindGroupLayoutEntry {
+                ConcreteBinding::TextureArray(_, stage, texture) => wgpu::BindGroupLayoutEntry {
                     binding: index as u32,
                     visibility: stage.into(),
                     ty: wgpu::BindingType::Texture {
                         multisampled: false,
-                        sample_type: texture.sample_type(),
+                        sample_type: texture.get_texture().sample_type(),
                         view_dimension: wgpu::TextureViewDimension::D2Array,
                     },
                     count: None,
                 },
-                Binding::Texture3D(_, stage, texture) => wgpu::BindGroupLayoutEntry {
+                ConcreteBinding::Texture3D(_, stage, texture) => wgpu::BindGroupLayoutEntry {
                     binding: index as u32,
                     visibility: stage.into(),
                     ty: wgpu::BindingType::Texture {
                         multisampled: false,
-                        sample_type: texture.sample_type(),
+                        sample_type: texture.get_texture().sample_type(),
                         view_dimension: wgpu::TextureViewDimension::D3,
                     },
                     count: None,
                 },
-                Binding::StorageTexture(_, stage, texture, access) => wgpu::BindGroupLayoutEntry {
-                    binding: index as u32,
-                    visibility: stage.into(),
-                    ty: wgpu::BindingType::StorageTexture {
-                        access: access.into(),
-                        format: texture.format,
-                        view_dimension: wgpu::TextureViewDimension::D2,
-                    },
-                    count: None,
-                },
-                Binding::StorageTextureCube(_, stage, texture, access) => {
+                ConcreteBinding::StorageTexture(_, stage, texture, access) => {
                     wgpu::BindGroupLayoutEntry {
                         binding: index as u32,
                         visibility: stage.into(),
                         ty: wgpu::BindingType::StorageTexture {
                             access: access.into(),
-                            format: texture.format,
+                            format: texture.get_texture().format,
+                            view_dimension: wgpu::TextureViewDimension::D2,
+                        },
+                        count: None,
+                    }
+                }
+                ConcreteBinding::StorageTextureCube(_, stage, texture, access) => {
+                    wgpu::BindGroupLayoutEntry {
+                        binding: index as u32,
+                        visibility: stage.into(),
+                        ty: wgpu::BindingType::StorageTexture {
+                            access: access.into(),
+                            format: texture.get_texture().format,
                             view_dimension: wgpu::TextureViewDimension::Cube,
                         },
                         count: None,
                     }
                 }
-                Binding::StorageTextureArray(_, stage, texture, access) => {
+                ConcreteBinding::StorageTextureArray(_, stage, texture, access) => {
                     wgpu::BindGroupLayoutEntry {
                         binding: index as u32,
                         visibility: stage.into(),
                         ty: wgpu::BindingType::StorageTexture {
                             access: access.into(),
-                            format: texture.format,
+                            format: texture.get_texture().format,
                             view_dimension: wgpu::TextureViewDimension::D2Array,
                         },
                         count: None,
                     }
                 }
-                Binding::StorageTexture3D(_, stage, texture, access) => {
+                ConcreteBinding::StorageTexture3D(_, stage, texture, access) => {
                     wgpu::BindGroupLayoutEntry {
                         binding: index as u32,
                         visibility: stage.into(),
                         ty: wgpu::BindingType::StorageTexture {
                             access: access.into(),
-                            format: texture.format,
+                            format: texture.get_texture().format,
                             view_dimension: wgpu::TextureViewDimension::D3,
                         },
                         count: None,
                     }
                 }
-                Binding::Sampler(_, stage, _) => wgpu::BindGroupLayoutEntry {
+                ConcreteBinding::Sampler(_, stage, _) => wgpu::BindGroupLayoutEntry {
                     binding: index as u32,
                     visibility: stage.into(),
                     ty: wgpu::BindingType::Sampler(wgpu::SamplerBindingType::Filtering),
                     count: None,
                 },
-                Binding::Storage(_, stage, storage) => {
-                    let read_only = !storage.can_write();
+                ConcreteBinding::Storage(_, stage, storage) => {
+                    let read_only = storage.get_buffer().can_write();
                     wgpu::BindGroupLayoutEntry {
                         binding: index as u32,
                         visibility: stage.into(),
@@ -204,12 +361,15 @@ pub struct Bindings {
 }
 
 impl Bindings {
-    pub(crate) fn load(
+    pub(crate) fn load<Buffer, Texture>(
         &mut self,
         ctx: &Context,
         pipeline_instance: &PipelineInstance,
-        bind_groups: &[BindGroup],
-    ) {
+        bind_groups: &[ConcreteBindGroup<Buffer, Texture>],
+    ) where
+        Buffer: GpuBuffer,
+        Texture: GpuTexture,
+    {
         let wgpu_bind_groups_layout = match pipeline_instance {
             PipelineInstance::Render(render) => &render.wgpu_bind_groups_layout,
             PipelineInstance::Compute(compute) => &compute.wgpu_bind_groups_layout,
@@ -227,24 +387,24 @@ impl Bindings {
                         .map(|(binding, entry)| wgpu::BindGroupEntry {
                             binding: binding as u32,
                             resource: match entry {
-                                Binding::Uniform(_, _, uniform) => {
-                                    uniform.get().as_entire_binding()
+                                ConcreteBinding::Uniform(_, _, uniform) => {
+                                    uniform.get_buffer().get().as_entire_binding()
                                 }
-                                Binding::Texture(_, _, texture)
-                                | Binding::TextureCube(_, _, texture)
-                                | Binding::TextureArray(_, _, texture)
-                                | Binding::Texture3D(_, _, texture)
-                                | Binding::StorageTexture(_, _, texture, _)
-                                | Binding::StorageTextureCube(_, _, texture, _)
-                                | Binding::StorageTextureArray(_, _, texture, _)
-                                | Binding::StorageTexture3D(_, _, texture, _) => {
-                                    wgpu::BindingResource::TextureView(texture.get())
+                                ConcreteBinding::Texture(_, _, texture)
+                                | ConcreteBinding::TextureCube(_, _, texture)
+                                | ConcreteBinding::TextureArray(_, _, texture)
+                                | ConcreteBinding::Texture3D(_, _, texture)
+                                | ConcreteBinding::StorageTexture(_, _, texture, _)
+                                | ConcreteBinding::StorageTextureCube(_, _, texture, _)
+                                | ConcreteBinding::StorageTextureArray(_, _, texture, _)
+                                | ConcreteBinding::StorageTexture3D(_, _, texture, _) => {
+                                    wgpu::BindingResource::TextureView(texture.get_texture().get())
                                 }
-                                Binding::Sampler(_, _, sampler) => {
+                                ConcreteBinding::Sampler(_, _, sampler) => {
                                     wgpu::BindingResource::Sampler(sampler.get())
                                 }
-                                Binding::Storage(_, _, storage) => {
-                                    storage.get().as_entire_binding()
+                                ConcreteBinding::Storage(_, _, storage) => {
+                                    storage.get_buffer().get().as_entire_binding()
                                 }
                             },
                         })

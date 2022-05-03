@@ -11,12 +11,18 @@ mod texture;
 
 use dotrix_math::{Mat4, Vec2};
 
-use crate::assets::{Mesh, Shader};
-use crate::ecs::{Const, Mut};
-use crate::{Assets, Color, Globals, Id, Window};
+use crate::{
+    assets::{Asset, Shader},
+    ecs::{Const, Mut},
+    providers::{BufferProvider, MeshProvider, TextureProvider},
+    reloadable::{ReloadKind, Reloadable},
+    Assets, Color, Globals, Id, Window,
+};
 
 pub use access::Access;
-pub use bindings::{BindGroup, Binding, Bindings, Stage};
+pub use bindings::{
+    Bindings, ConcreteBindGroup, ConcreteBinding, MaybeBindGroup, MaybeBinding, Stage,
+};
 pub use buffer::Buffer;
 pub use context::Context;
 pub use mesh::AttributeFormat;
@@ -38,6 +44,22 @@ pub const OPENGL_TO_WGPU_MATRIX: Mat4 = Mat4::new(
 
 const RENDERER_STARTUP: &str =
     "Please, use `renderer::startup` as a first system on the `startup` run level";
+
+use thiserror::Error;
+
+#[derive(Error, Debug)]
+/// Errors generated during binding/drawing/computing
+pub enum RendererError<T: Asset> {
+    /// When an asset returns a null id at draw/compute time
+    #[error("Asset not ready")]
+    AssetNotReady(Id<T>),
+    /// When the draw/compute call fails due to pipeline not ready
+    #[error("Pipeline not ready")]
+    PipelineNotReady,
+    /// When the draw/compute call fails due to shader not ready
+    #[error("Shader not ready")]
+    ShaderNotReady,
+}
 
 /// Collection of traits that a gpu buffer needs
 pub trait GpuBuffer: Reloadable + BufferProvider + Asset {}
@@ -237,36 +259,27 @@ impl Renderer {
     /// Forces engine to reload shaders
     pub fn reload(&mut self) {
         self.dirty = true;
-        self.drop_all_pipelines();
-    }
-
-    /// Drop the context pipeline for a shader
-    ///
-    /// This should be called when a shader is removed.
-    pub fn drop_pipeline(&mut self, shader: Id<Shader>) {
-        self.dirty = true;
-        self.context_mut().drop_pipeline(shader);
-    }
-
-    /// Returns true if renderer has pipeline for the sahder
-    pub fn has_pipeline(&self, shader: Id<Shader>) -> bool {
-        self.context().has_pipeline(shader)
-    }
-
-    /// Drop all loaded context pipelines for all shader
-    pub fn drop_all_pipelines(&mut self) {
-        self.dirty = true;
-        self.context_mut().drop_all_pipelines();
     }
 
     /// Binds uniforms and other data to the pipeline
-    pub fn bind(&mut self, pipeline: &mut Pipeline, layout: PipelineLayout) {
-        if !self.context().has_pipeline(pipeline.shader) {
+    ///
+    /// This will also create the pipeline instance if it
+    /// is not already ready
+    pub fn bind<'a, 'b, Buffer, Texture, Mesh>(
+        &mut self,
+        pipeline: &mut Pipeline,
+        layout: PipelineLayout<'a, 'b, Buffer, Texture, Mesh>,
+    ) where
+        &'a Mesh: GpuMesh,
+        Buffer: GpuBuffer,
+        Texture: GpuTexture,
+    {
+        if pipeline.instance.is_none() {
             let instance = layout.instance(self.context());
-            self.context_mut().add_pipeline(pipeline.shader, instance);
+            pipeline.instance = Some(instance);
         }
 
-        let instance = self.context().pipeline(pipeline.shader).unwrap();
+        let instance = pipeline.instance.as_ref().unwrap();
         let mut bindings = Bindings::default();
         let bindings_layout = match layout {
             PipelineLayout::Render { bindings, .. } => bindings,
@@ -277,15 +290,124 @@ impl Renderer {
     }
 
     /// Runs the render pipeline for a mesh
-    pub fn draw(&mut self, pipeline: &mut Pipeline, mesh: &Mesh, args: &DrawArgs) {
-        self.context_mut()
-            .run_render_pipeline(pipeline.shader, mesh, &pipeline.bindings, args);
+    pub fn draw<'a, 'b, T, Mesh, Buffer, Texture>(
+        &mut self,
+        pipeline: &mut Pipeline,
+        shader: Id<Shader>,
+        mesh_id: &'a Mesh,
+        assets: &'a Assets,
+        bind_groups: &'a [MaybeBindGroup<'a, Buffer, Texture>],
+        args: DrawArgs,
+    ) -> Result<(), RendererError<T>>
+    where
+        Mesh: 'a + IdOrMesh<'a>,
+        &'a Mesh::BaseType: GpuMesh,
+        Buffer: 'a + IdOrBuffer<'a>,
+        Buffer::BaseType: GpuBuffer,
+        Texture: 'a + IdOrTexture<'a>,
+        Texture::BaseType: GpuTexture,
+        T: Asset,
+        RendererError<T>: std::convert::From<RendererError<Buffer::BaseType>>,
+        RendererError<T>: std::convert::From<RendererError<Mesh::BaseType>>,
+        RendererError<T>: std::convert::From<RendererError<Texture::BaseType>>,
+        RendererError<T>: std::convert::From<RendererError<Shader>>,
+    {
+        let mut needs_binding = !pipeline.ready();
+
+        let last_cycle = pipeline.get_cycle();
+        pipeline.cycle(self);
+
+        let shader = assets
+            .get::<Shader>(shader)
+            .ok_or(RendererError::AssetNotReady(shader))?;
+
+        let mesh = mesh_id.get_asset(assets)?;
+
+        if !needs_binding {
+            needs_binding = matches!(mesh.changes_since(last_cycle), ReloadKind::Reload);
+        }
+
+        // Check all assets to ensure they exist and convert to assets and not IDs
+        let bind_groups = bind_groups
+            .iter()
+            .map(|bind_group| bind_group.make_concrete(assets))
+            .collect::<Result<Vec<ConcreteBindGroup<_, _>>, _>>()?;
+
+        // Check if any asset need a reload
+        for bind_group in bind_groups.iter() {
+            for binding in bind_group.bindings.iter() {
+                if !needs_binding {
+                    let state = match binding {
+                        ConcreteBinding::Uniform(_, _, reloadable)
+                        | ConcreteBinding::Storage(_, _, reloadable) => {
+                            reloadable.changes_since(last_cycle)
+                        }
+                        ConcreteBinding::Texture(_, _, reloadable)
+                        | ConcreteBinding::TextureCube(_, _, reloadable)
+                        | ConcreteBinding::TextureArray(_, _, reloadable)
+                        | ConcreteBinding::Texture3D(_, _, reloadable)
+                        | ConcreteBinding::StorageTexture(_, _, reloadable, _)
+                        | ConcreteBinding::StorageTextureCube(_, _, reloadable, _)
+                        | ConcreteBinding::StorageTextureArray(_, _, reloadable, _)
+                        | ConcreteBinding::StorageTexture3D(_, _, reloadable, _) => {
+                            reloadable.changes_since(last_cycle)
+                        }
+                        ConcreteBinding::Sampler(_, _, _) => ReloadKind::NoChange,
+                    };
+
+                    needs_binding = matches!(state, ReloadKind::Reload);
+                }
+            }
+        }
+
+        if needs_binding {
+            pipeline.bindings.unload();
+        }
+
+        if !pipeline.ready() {
+            if shader.loaded() {
+                return Err(RendererError::ShaderNotReady);
+            }
+            let layout = PipelineLayout::Render {
+                label: shader.name.clone(),
+                mesh,
+                shader,
+                bindings: bind_groups.as_slice(),
+                options: args.render_options.clone(),
+            };
+            self.bind(pipeline, layout);
+        }
+        self.context_mut().run_render_pipeline(
+            pipeline.instance.as_ref().unwrap(),
+            mesh,
+            &pipeline.bindings,
+            &args,
+        );
+        Ok(())
     }
 
     /// Runs the compute pipeline
-    pub fn compute(&mut self, pipeline: &mut Pipeline, args: &ComputeArgs) {
-        self.context_mut()
-            .run_compute_pipeline(pipeline.shader, &pipeline.bindings, args);
+    pub fn compute<'a, T, Buffer, Texture>(
+        &mut self,
+        _pipeline: &mut Pipeline,
+        _shader: Id<Shader>,
+        _assets: &Assets,
+        _bind_groups: &[MaybeBindGroup<'a, Buffer, Texture>],
+        _args: &ComputeArgs,
+    ) -> Result<(), RendererError<T>>
+    where
+        Buffer: IdOrBuffer<'a>,
+        Buffer::BaseType: GpuBuffer,
+        Texture: IdOrTexture<'a>,
+        Texture::BaseType: GpuTexture,
+        T: Asset,
+        RendererError<T>: std::convert::From<RendererError<Buffer::BaseType>>,
+        RendererError<T>: std::convert::From<RendererError<Shader>>,
+        RendererError<T>: std::convert::From<RendererError<Texture::BaseType>>,
+    {
+        // self.context_mut()
+        //     .run_compute_pipeline(pipeline, shader, assets, bindings, args);
+        Ok(())
     }
 
     /// Returns surface size

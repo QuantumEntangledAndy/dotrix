@@ -1,12 +1,13 @@
-use super::{BindGroup, Bindings, Context, Renderer};
-use crate::assets::{Mesh, Shader};
-use crate::Id;
+use super::{
+    Bindings, ConcreteBindGroup, Context, GpuBuffer, GpuMesh, GpuTexture, MeshProvider, Renderer,
+};
+use crate::assets::Shader;
 
 /// Pipeline context
 #[derive(Default)]
 pub struct Pipeline {
-    /// [`Id`] of the shader
-    pub shader: Id<Shader>,
+    /// The backing GPU instance
+    pub instance: Option<PipelineInstance>,
     /// Pipeline bindings
     pub bindings: Bindings,
     /// renderer's cycle
@@ -31,33 +32,36 @@ pub struct Compute {
 
 impl Pipeline {
     /// Constructs new instance of `Compute` pipeline component with defined Shader
-    pub fn compute(shader: Id<Shader>) -> Compute {
+    pub fn compute() -> Compute {
         Compute {
             pipeline: Pipeline {
-                shader,
                 ..Default::default()
             },
         }
     }
 
     /// Constructs new instance of `Render` pipeline component with defined Shader
-    pub fn render(shader: Id<Shader>) -> Render {
+    pub fn render() -> Render {
         Render {
             pipeline: Pipeline {
-                shader,
                 ..Default::default()
             },
         }
     }
 
+    /// Get the cycle number
+    pub fn get_cycle(&self) -> usize {
+        self.cycle
+    }
+
     /// Checks if rendering cycle should be performed
     pub fn cycle(&self, renderer: &Renderer) -> bool {
-        !self.disabled && self.cycle != renderer.cycle() && !self.shader.is_null()
+        !self.disabled && self.cycle != renderer.cycle()
     }
 
     /// Returns true if Pipeline is ready to run
-    pub fn ready(&self, renderer: &Renderer) -> bool {
-        renderer.has_pipeline(self.shader) && self.bindings.loaded()
+    pub fn ready(&self) -> bool {
+        self.instance.is_some() && self.bindings.loaded()
     }
 }
 
@@ -75,7 +79,7 @@ pub struct ScissorsRect {
 }
 
 /// Draw call arguments
-#[derive(Debug, Clone, Copy)]
+#[derive(Debug, Clone)]
 pub struct DrawArgs {
     /// Scissors Rectangle
     pub scissors_rect: Option<ScissorsRect>,
@@ -83,14 +87,17 @@ pub struct DrawArgs {
     pub start_index: u32,
     /// Indexed draw end
     pub end_index: u32,
+    /// Options used for binding
+    pub render_options: RenderOptions,
 }
 
-impl Default for DrawArgs {
+impl<'a> Default for DrawArgs {
     fn default() -> Self {
         Self {
             scissors_rect: None,
             start_index: 0,
             end_index: 1,
+            render_options: Default::default(),
         }
     }
 }
@@ -99,6 +106,8 @@ impl Default for DrawArgs {
 pub struct ComputeArgs {
     /// Compute work groups
     pub work_groups: WorkGroups,
+    /// Options for binding
+    pub compute_options: ComputeOptions,
 }
 
 /// Numbers of Work Groups in all directions
@@ -166,7 +175,12 @@ impl PipelineInstance {
 }
 
 /// Pipeline layout
-pub enum PipelineLayout<'a> {
+pub enum PipelineLayout<'a, 'b, Buffer, Texture, Mesh>
+where
+    Buffer: GpuBuffer,
+    Texture: GpuTexture,
+    &'a Mesh: GpuMesh,
+{
     /// Rendering Pipeline Layout
     Render {
         /// Name of the Pipeline
@@ -176,9 +190,9 @@ pub enum PipelineLayout<'a> {
         /// Shader module
         shader: &'a Shader,
         /// Pipeline bindings
-        bindings: &'a [BindGroup<'a>],
+        bindings: &'b [ConcreteBindGroup<'a, Buffer, Texture>],
         /// Pipeline options
-        options: RenderOptions<'a>,
+        options: RenderOptions,
     },
     /// Compute Pipeline Layout
     Compute {
@@ -187,14 +201,20 @@ pub enum PipelineLayout<'a> {
         /// Shader module
         shader: &'a Shader,
         /// Pipeline bindings
-        bindings: &'a [BindGroup<'a>],
+        bindings: &'b [ConcreteBindGroup<'a, Buffer, Texture>],
         /// Pipeline options
-        options: ComputeOptions<'a>,
+        options: ComputeOptions,
     },
 }
 
-impl PipelineLayout<'_> {
-    /// Constructs `PipelineInstance` from the layout
+impl<'a, 'b, Buffer, Texture, Mesh> PipelineLayout<'a, 'b, Buffer, Texture, Mesh>
+where
+    &'a Mesh: GpuMesh,
+    Buffer: GpuBuffer,
+    Texture: GpuTexture,
+{
+    /// Constructs `PipelineInstance` from the layout if all assets
+    /// are ready or None if not
     pub fn instance(&self, ctx: &Context) -> PipelineInstance {
         match self {
             PipelineLayout::Render {
@@ -217,9 +237,9 @@ impl PipelineLayout<'_> {
     pub fn render(
         ctx: &Context,
         label: &str,
-        mesh: &Mesh,
+        mesh: &'a Mesh,
         shader: &Shader,
-        bindings: &[BindGroup],
+        bindings: &[ConcreteBindGroup<Buffer, Texture>],
         options: &RenderOptions,
     ) -> PipelineInstance {
         let wgpu_shader_module = shader.module.get();
@@ -244,7 +264,7 @@ impl PipelineLayout<'_> {
         // prepare vertex buffers layout
         let mut vertex_array_stride = 0;
         let vertex_attributes = mesh
-            .vertex_buffer_layout()
+            .get_vertex_buffer_layout()
             .iter()
             .enumerate()
             .map(|(index, attr)| {
@@ -272,12 +292,12 @@ impl PipelineLayout<'_> {
                 layout: Some(&wgpu_pipeline_layout),
                 vertex: wgpu::VertexState {
                     module: wgpu_shader_module,
-                    entry_point: options.vs_main,
+                    entry_point: &options.vs_main,
                     buffers: &vertex_buffers,
                 },
                 fragment: Some(wgpu::FragmentState {
                     module: wgpu_shader_module,
-                    entry_point: options.fs_main,
+                    entry_point: &options.fs_main,
                     targets: &[wgpu::ColorTargetState {
                         format: ctx.sur_desc.format,
                         blend: match depth_buffer_mode {
@@ -342,7 +362,7 @@ impl PipelineLayout<'_> {
         ctx: &Context,
         label: &str,
         shader: &Shader,
-        bindings: &[BindGroup],
+        bindings: &[ConcreteBindGroup<Buffer, Texture>],
         options: &ComputeOptions,
     ) -> PipelineInstance {
         let wgpu_shader_module = shader.module.get();
@@ -369,7 +389,7 @@ impl PipelineLayout<'_> {
                 label: Some(label),
                 layout: Some(&wgpu_pipeline_layout),
                 module: wgpu_shader_module,
-                entry_point: options.cs_main,
+                entry_point: &options.cs_main,
             });
 
         PipelineInstance::Compute(ComputePipeline {
@@ -380,36 +400,39 @@ impl PipelineLayout<'_> {
 }
 
 /// Pipeline options
-pub struct RenderOptions<'a> {
+#[derive(Debug, Clone)]
+pub struct RenderOptions {
     /// Depth buffer mode
     pub depth_buffer_mode: DepthBufferMode,
     /// Disable cull mode
     pub disable_cull_mode: bool,
     /// Vertex Shader Entry Point
-    pub vs_main: &'a str,
+    pub vs_main: String,
     /// Fragment Shader Entry Point
-    pub fs_main: &'a str,
+    pub fs_main: String,
 }
 
-impl Default for RenderOptions<'_> {
+impl Default for RenderOptions {
     fn default() -> Self {
         Self {
             depth_buffer_mode: DepthBufferMode::ReadWrite,
             disable_cull_mode: false,
-            vs_main: "vs_main",
-            fs_main: "fs_main",
+            vs_main: "vs_main".to_string(),
+            fs_main: "fs_main".to_string(),
         }
     }
 }
 
 /// Pipeline options
-pub struct ComputeOptions<'a> {
+pub struct ComputeOptions {
     /// Compute Shader
-    pub cs_main: &'a str,
+    pub cs_main: String,
 }
 
-impl Default for ComputeOptions<'_> {
+impl Default for ComputeOptions {
     fn default() -> Self {
-        Self { cs_main: "cs_main" }
+        Self {
+            cs_main: "cs_main".to_string(),
+        }
     }
 }
