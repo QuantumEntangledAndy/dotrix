@@ -39,6 +39,76 @@ pub const OPENGL_TO_WGPU_MATRIX: Mat4 = Mat4::new(
 const RENDERER_STARTUP: &str =
     "Please, use `renderer::startup` as a first system on the `startup` run level";
 
+/// Collection of traits that a gpu buffer needs
+pub trait GpuBuffer: Reloadable + BufferProvider + Asset {}
+impl<T: Reloadable + BufferProvider + Asset> GpuBuffer for T {}
+/// Collection of traits that a gpu texture needs
+pub trait GpuTexture: Reloadable + TextureProvider + Asset {}
+impl<T: Reloadable + TextureProvider + Asset> GpuTexture for T {}
+/// Collection of traits that a gpu mesh needs
+pub trait GpuMesh: Reloadable + MeshProvider + Asset {}
+impl<T: Reloadable + MeshProvider + Asset> GpuMesh for T {}
+
+/// Used to either get a Mesh directly or convert an Id to an asset
+///
+/// This is used so that BindGroup can accept either
+
+macro_rules! impl_idor {
+    ($i: ident, $n:ident) => {
+        /// Trait used either to accept an Asset or an Id of an Asset
+        pub trait $n<'a>
+        where
+            Self::BaseType: Asset + $i,
+        {
+            /// The underlying asset type
+            type BaseType;
+
+            /// Get a ref to the asset
+            fn get_asset(
+                &'a self,
+                assets: &'a Assets,
+            ) -> Result<&'a Self::BaseType, RendererError<Self::BaseType>>;
+        }
+
+        /// No Op varient when it is already an Asset
+        impl<'a, T> $n<'a> for &'a T
+        where
+            T: Asset + $i,
+            RendererError<T>: std::convert::From<RendererError<T>>,
+        {
+            type BaseType = T;
+            fn get_asset(
+                &'a self,
+                _assets: &'a Assets,
+            ) -> Result<&'a Self::BaseType, RendererError<Self::BaseType>> {
+                Ok(self)
+            }
+        }
+
+        /// When it is an Id
+        impl<'a, T> $n<'a> for Id<T>
+        where
+            T: Asset + $i,
+            RendererError<T>: std::convert::From<RendererError<T>>,
+        {
+            type BaseType = T;
+
+            fn get_asset(
+                &'a self,
+                assets: &'a Assets,
+            ) -> Result<&'a Self::BaseType, RendererError<Self::BaseType>> {
+                assets
+                    .get::<Self::BaseType>(*self)
+                    .ok_or_else(|| RendererError::AssetNotReady(*self))
+            }
+        }
+    };
+}
+
+impl_idor!(GpuMesh, IdOrMesh);
+impl_idor!(GpuBuffer, IdOrBuffer);
+impl_idor!(GpuTexture, IdOrTexture);
+
 /// Service providing an interface to `WGPU` and `WINIT`
 pub struct Renderer {
     /// Surface clear color
