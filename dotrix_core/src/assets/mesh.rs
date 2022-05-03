@@ -1,5 +1,8 @@
 //! Mesh Asset
-use crate::renderer::{AttributeFormat, Buffer, Renderer};
+use crate::{
+    renderer::{AttributeFormat, Buffer, Renderer},
+    MeshProvider,
+};
 use bytemuck::{Pod, Zeroable};
 use dotrix_math::{InnerSpace, Vec2, Vec3, VectorSpace};
 use std::marker::PhantomData;
@@ -332,6 +335,31 @@ where
         self.iter
             .next()
             .map(|v| bytemuck::cast_slice::<u8, T>(&v[self.offset..self.size])[0])
+    }
+}
+
+impl MeshProvider for Mesh {
+    /// Get the underlying vertex buffer
+    fn get_vertex(&self) -> &Buffer {
+        &self.vertex_buffer
+    }
+    /// Get the underlying optional index buffer
+    fn get_indicies(&self) -> Option<&Buffer> {
+        if self.indices.is_some() {
+            Some(&self.index_buffer)
+        } else {
+            None
+        }
+    }
+
+    /// Get the number of verticies
+    fn get_vertex_count(&self) -> u32 {
+        self.count_vertices()
+    }
+
+    /// Get the layout of a vertex
+    fn get_vertex_buffer_layout(&self) -> &[AttributeFormat] {
+        self.vertex_buffer_layout()
     }
 }
 

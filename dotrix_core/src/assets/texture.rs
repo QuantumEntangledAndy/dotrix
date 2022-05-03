@@ -1,7 +1,12 @@
 //! Texture asset
-use crate::renderer::{Renderer, Texture as TextureBuffer};
+use crate::{
+    renderer::{Renderer, Texture as TextureBuffer},
+    ReloadKind, ReloadState, Reloadable,
+};
+use dotrix_macros::{Reloadable, TextureProvider};
 
 /// Texture asset
+#[derive(Reloadable, TextureProvider)]
 pub struct Texture {
     /// Texture width in pixels
     pub width: u32,
@@ -12,9 +17,11 @@ pub struct Texture {
     /// Raw texture data
     pub data: Vec<u8>,
     /// Texture buffer
-    pub buffer: TextureBuffer,
-    /// Was the asset changed
-    pub changed: bool,
+    pub texture: TextureBuffer,
+    /// Flagged on change
+    pub reload_state: ReloadState,
+    /// Last cycle in which the buffer data was updated
+    pub last_load_cycle: usize,
 }
 
 impl Default for Texture {
@@ -24,26 +31,52 @@ impl Default for Texture {
             height: 0,
             depth: 0,
             data: vec![],
-            buffer: TextureBuffer::new("Texture"),
-            changed: false,
+            texture: TextureBuffer::new("Texture"),
+            reload_state: Default::default(),
+            last_load_cycle: 0,
         }
     }
 }
 
 impl Texture {
-    /// Loads the [`Texture`] data to a buffer
+    /// Loads the [`Texture`] data to a buffer from the CPU data
     pub fn load(&mut self, renderer: &Renderer) {
-        if !self.changed && self.buffer.loaded() {
-            return;
+        if matches!(
+            self.changes_since(self.last_load_cycle),
+            ReloadKind::Reload | ReloadKind::Update
+        ) || !self.texture.loaded()
+        {
+            renderer.load_texture(
+                &mut self.texture,
+                self.width,
+                self.height,
+                &[self.data.as_slice()],
+            );
+            self.last_load_cycle = renderer.cycle();
         }
+    }
 
-        renderer.load_texture(&mut self.buffer, self.width, self.height, &[&self.data]);
-        self.changed = false;
+    /// Prepare data into the cpu buffer
+    ///
+    /// This will flag if the buffer require reloading as appropiate
+    pub fn prepare(&mut self, dimension: [u32; 2], data: Vec<u8>) {
+        if dimension[0] != self.width
+            || dimension[1] != self.height
+            || data.len() != self.data.len()
+        {
+            self.unload();
+        } else {
+            self.flag_updated();
+        }
+        self.width = dimension[0];
+        self.height = dimension[1];
+        self.data = data;
     }
 
     /// Unloads the [`Texture`] data from the buffer
     pub fn unload(&mut self) {
-        self.buffer.unload();
+        self.texture.unload();
+        self.flag_reload();
     }
 
     /// Fetch data from the gpu
@@ -56,6 +89,6 @@ impl Texture {
         &mut self,
         renderer: &mut Renderer,
     ) -> impl std::future::Future<Output = Result<Vec<u8>, wgpu::BufferAsyncError>> {
-        renderer.fetch_texture(&self.buffer, [self.width, self.height, self.depth])
+        renderer.fetch_texture(&self.texture, [self.width, self.height, self.depth])
     }
 }
