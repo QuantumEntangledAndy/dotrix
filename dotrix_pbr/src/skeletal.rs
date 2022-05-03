@@ -2,7 +2,8 @@ use dotrix_core::assets::{Mesh, Shader, Skin, Texture};
 use dotrix_core::camera::ProjView;
 use dotrix_core::ecs::{Const, Mut, System};
 use dotrix_core::renderer::{
-    BindGroup, Binding, DrawArgs, Pipeline, PipelineLayout, Render, RenderOptions, Sampler, Stage,
+    DrawArgs, MaybeBindGroup, MaybeBinding, Pipeline, PipelineLayout, Render, RenderOptions,
+    Sampler, Stage,
 };
 use dotrix_core::{Application, Assets, Color, Globals, Id, Pose, Renderer, Transform, World};
 
@@ -67,7 +68,7 @@ impl Entity {
                 rotate: self.rotate,
                 scale: self.scale,
             },
-            Pipeline::render(self.shader),
+            Pipeline::render(),
         ))
     }
 }
@@ -109,15 +110,6 @@ pub fn render(
     )>();
 
     for (model, pose, material, transform, render) in query {
-        if render.pipeline.shader.is_null() {
-            render.pipeline.shader = assets.find::<Shader>(PIPELINE_LABEL).unwrap_or_default();
-        }
-
-        // check if model is disabled or already rendered
-        if !render.pipeline.cycle(&renderer) {
-            continue;
-        }
-
         // Skip rendering if some data was not loaded yet
         if !model.load(&renderer, &mut assets) {
             continue;
@@ -135,86 +127,60 @@ pub fn render(
 
         let mesh = assets.get(model.mesh).unwrap();
 
-        if !render.pipeline.ready(&renderer) {
-            if let Some(shader) = assets.get(render.pipeline.shader) {
-                if !shader.loaded() {
-                    continue;
-                }
+        let proj_view = globals
+            .get::<ProjView>()
+            .expect("ProjView buffer must be loaded");
 
-                let texture = assets.get(material.texture).unwrap();
-                let roughness_texture = assets.get(material.roughness_texture).unwrap();
-                let metallic_texture = assets.get(material.metallic_texture).unwrap();
-                let ao_texture = assets.get(material.ao_texture).unwrap();
-                let normal_texture = assets.get(material.normal_texture).unwrap();
+        let sampler = globals
+            .get::<Sampler>()
+            .expect("ProjView buffer must be loaded");
 
-                let proj_view = globals
-                    .get::<ProjView>()
-                    .expect("ProjView buffer must be loaded");
+        let lights = globals
+            .get::<Lights>()
+            .expect("Lights buffer must be loaded");
 
-                let sampler = globals
-                    .get::<Sampler>()
-                    .expect("ProjView buffer must be loaded");
-
-                let lights = globals
-                    .get::<Lights>()
-                    .expect("Lights buffer must be loaded");
-
-                renderer.bind(
-                    &mut render.pipeline,
-                    PipelineLayout::Render {
-                        label: String::from(PIPELINE_LABEL),
-                        mesh,
-                        shader,
-                        bindings: &[
-                            BindGroup::new(
-                                "Globals",
-                                vec![
-                                    Binding::Uniform("ProjView", Stage::Vertex, &proj_view.uniform),
-                                    Binding::Sampler("Sampler", Stage::Fragment, sampler),
-                                    Binding::Uniform("Lights", Stage::Fragment, &lights.uniform),
-                                ],
-                            ),
-                            BindGroup::new(
-                                "Locals",
-                                vec![
-                                    Binding::Uniform("Transform", Stage::Vertex, &model.transform),
-                                    Binding::Uniform(
-                                        "Material",
-                                        Stage::Fragment,
-                                        &material.uniform,
-                                    ),
-                                    Binding::Texture("Texture", Stage::Fragment, &texture.buffer),
-                                    Binding::Texture(
-                                        "RoughnessTexture",
-                                        Stage::Fragment,
-                                        &roughness_texture.buffer,
-                                    ),
-                                    Binding::Texture(
-                                        "MetallicTexture",
-                                        Stage::Fragment,
-                                        &metallic_texture.buffer,
-                                    ),
-                                    Binding::Texture(
-                                        "AoTexture",
-                                        Stage::Fragment,
-                                        &ao_texture.buffer,
-                                    ),
-                                    Binding::Texture(
-                                        "NormalTexture",
-                                        Stage::Fragment,
-                                        &normal_texture.buffer,
-                                    ),
-                                    Binding::Uniform("Joints", Stage::Vertex, &pose.uniform),
-                                ],
-                            ),
-                        ],
-                        options: RenderOptions::default(),
-                    },
-                );
-            }
-        }
-
-        renderer.draw(&mut render.pipeline, mesh, &DrawArgs::default());
+        render.draw(
+            &mut render.pipeline,
+            assets.find::<Shader>(PIPELINE_LABEL).unwrap_or_default(),
+            model.mesh,
+            &assets,
+            &[
+                MaybeBindGroup::new(
+                    "Globals",
+                    vec![
+                        MaybeBinding::Uniform("ProjView", Stage::Vertex, proj_view),
+                        MaybeBinding::Sampler("Sampler", Stage::Fragment, sampler),
+                        MaybeBinding::Uniform("Lights", Stage::Fragment, &lights.uniform),
+                    ],
+                ),
+                MaybeBindGroup::new(
+                    "Locals",
+                    vec![
+                        MaybeBinding::Uniform("Transform", Stage::Vertex, &model.transform),
+                        MaybeBinding::Uniform("Material", Stage::Fragment, &material.uniform),
+                        MaybeBinding::Texture("Texture", Stage::Fragment, material.texture),
+                        MaybeBinding::Texture(
+                            "RoughnessTexture",
+                            Stage::Fragment,
+                            material.roughness_texture,
+                        ),
+                        MaybeBinding::Texture(
+                            "MetallicTexture",
+                            Stage::Fragment,
+                            material.metallic_texture,
+                        ),
+                        MaybeBinding::Texture("AoTexture", Stage::Fragment, material.ao_texture),
+                        MaybeBinding::Texture(
+                            "NormalTexture",
+                            Stage::Fragment,
+                            material.normal_texture,
+                        ),
+                        MaybeBinding::Uniform("Joints", Stage::Vertex, &pose.uniform),
+                    ],
+                ),
+            ],
+            RenderOptions::default(),
+        );
     }
 }
 
