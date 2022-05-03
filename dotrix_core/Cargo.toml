@@ -25,6 +25,10 @@ features = ["derive"]
 version = "0.4"
 path = "../dotrix_math"
 
+[dependencies.dotrix_macros]
+version = "0.1"
+path = "../dotrix_macros"
+
 [dependencies.futures]
 version = "0.3"
 default-features = false
@@ -39,6 +43,9 @@ version = "0.4"
 
 [dependencies.image]
 version = "0.23.14"
+
+[dependencies.macro-vis]
+version = "0.1.1"
 
 [dependencies.serde]
 version = "1.0"
@@ -62,3 +69,6 @@ features = ["serde"]
 [dependencies.shaderc]
 version = "0.7"
 optional = true
+
+[dependencies.thiserror]
+version = "1.0.30"
